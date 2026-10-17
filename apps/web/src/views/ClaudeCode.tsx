@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api, currentProject, q, when } from "../api";
+import { api, currentProject, isHosted, q, when } from "../api";
 import { Page } from "../App";
 import { Badge, Btn, Empty, ErrorBox, Loading, useAction, useApi } from "../ui";
 
@@ -17,7 +17,9 @@ export default function ClaudeCode({ agentId }: { agentId?: string }) {
     <Page title="Claude Code history">
       <ErrorBox error={list.error} />
       {!list.data ? <Loading what="Claude Code projects" /> : !projects.length ? (
-        <Empty>No Claude Code project is guarded yet. Install the guard in Settings → Guard Claude Code in a project folder.</Empty>
+        <Empty>{isHosted()
+          ? <>No Claude Code project yet. Go to <a href="#/settings">Settings → Connect your computer</a>, create a connect code and paste it into the launcher; your practice folder appears here.</>
+          : <>No Claude Code project is guarded yet. Install the guard in Settings → Guard Claude Code in a project folder.</>}</Empty>
       ) : (
         <>
           {projects.length > 1 ? (
