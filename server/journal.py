@@ -23,6 +23,7 @@ EXTRA_EVENT_KINDS = {
     "lesson.applied", "source.quarantined", "effect.failed", "effect.reconciled",
     "recovery.started", "recovery.finished", "run.restored", "subagent.handoff",
     "observation.excluded", "registry.refreshed",
+    "agent_state.opened", "merge.negotiated", "checkpoint.failed",
 }
 
 REDACT_KEYS = {"content", "body", "raw", "secret", "token", "password", "api_key"}

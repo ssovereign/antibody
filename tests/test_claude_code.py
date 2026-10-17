@@ -124,8 +124,6 @@ def test_ab_commands_version_the_project_folder(core, proj, tmp_path):
     (proj / "src" / "extra.py").write_text("junk\n", encoding="utf-8")
     d = ab(core, proj, "diff", **kw)
     assert "src/main.py" in d and "v2 broken" in d
-    # switching with unsaved changes is refused, so nothing is lost
-    assert "unsaved changes" in ab(core, proj, "restore HEAD", **kw)
     ab(core, proj, 'save "second try"', **kw)
     log = ab(core, proj, "log", **kw)
     assert "second try" in log and "first working version" in log

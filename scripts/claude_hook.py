@@ -71,7 +71,7 @@ def main() -> None:
                                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {tok}"})
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # local service: never via a proxy
-        with opener.open(req, timeout=25) as r:
+        with opener.open(req, timeout=1790 if ev.get("hook_event_name") == "UserPromptSubmit" else 25) as r:
             res = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         unreachable(ev, f"HTTP {e.code}")

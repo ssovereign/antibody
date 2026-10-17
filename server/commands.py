@@ -35,8 +35,14 @@ HELP = """Version history commands (like Git, for this agent):
   runs [n]                    recent runs on this branch
   effects [run]               what a run did outside the agent (default: last run)
 For Claude Code projects (typed as 'ab: <command>' in Claude Code):
-  switch / restore / merge also change the files in your project folder, like git checkout;
-  they refuse while there are unsaved changes.
+  A checkpoint (files + the exact conversation) is saved before every prompt you send.
+  rewind [n]                  go back n prompts: files and agent state as they were (default 1)
+  undo                        same as 'rewind 1'
+  restore / switch / rewind   write that version's files into the folder (like git checkout) and
+                              open its exact conversation as a new Claude Code session to resume
+  merge <branch>              negotiated merge: both agents vote on every change from their own
+                              memory, a third agent arbitrates what they still disagree on
+  tree                        all branches and where they came from
   transcript [ref]            read the conversation saved with a version
 Refs: HEAD, HEAD~1, a branch name, a version id prefix, or a quoted label."""
 
@@ -115,12 +121,13 @@ class Commands:
             parts = ["help"]
         cmd, args = parts[0].lower(), parts[1:]
         handler = getattr(self, f"cmd_{cmd.replace('-', '_')}", None)
-        aliases = {"checkout": self.cmd_switch, "commit": self.cmd_save, "history": self.cmd_log, "rollback": self.cmd_restore}
+        aliases = {"checkout": self.cmd_switch, "commit": self.cmd_save, "history": self.cmd_log, "rollback": self.cmd_restore,
+                   "checkpoints": self.cmd_log}
         handler = handler or aliases.get(cmd)
         if handler is None:
             return {"ok": False, "output": f"Unknown command '{cmd}'. Type 'help' for the list.", "branch_id": branch["branch_id"]}
         host = self.core.claude_code if agent["adapter"] == "claude_code_hooks" else None
-        moving = bool(host) and (cmd in ("switch", "checkout", "restore", "rollback") or (cmd == "merge" and len(args) >= 2))
+        moving = bool(host) and (cmd in ("switch", "checkout", "restore", "rollback", "rewind", "undo") or (cmd == "merge" and args))
         before = branch["head_version"]
         try:
             if host:
@@ -128,8 +135,10 @@ class Commands:
                 host.sync_workspace(agent, branch, include_transcript=cmd in ("save", "commit"))
                 branch = self.v.branch(branch["branch_id"])
                 if moving and before and not self.v.is_clean(branch["branch_id"]):
-                    raise CommandError("Your project folder has unsaved changes. Run 'save' first (or 'diff' to see them), "
-                                       "so switching does not lose them.")
+                    # never lose work: checkpoint the current files and conversation first
+                    host.checkpoint(agent, None, f"auto: before {cmd}", actor)
+                    branch = self.v.branch(branch["branch_id"])
+                    before = branch["head_version"]
             out = handler(project_id, agent, branch, args, actor)
         except CommandError as e:
             return {"ok": False, "output": str(e), "branch_id": branch["branch_id"]}
@@ -147,17 +156,58 @@ class Commands:
         out.setdefault("ok", True)
         if host:
             new = self.v.branch(out["branch_id"])
-            if moving and new["head_version"] and new["head_version"] != before:
+            data = out.get("data") or {}
+            moved = new["head_version"] != before or out["branch_id"] != branch["branch_id"]
+            if moving and new["head_version"] and moved and not data.get("checked_out"):
                 changes = host.checkout(agent, before, new["head_version"])
                 lines = [f"Project folder updated: {len(changes)} file change(s)."] + [f"  {c}" for c in changes[:25]]
                 if len(changes) > 25:
                     lines.append("  ...")
-                lines.append("The chat itself is not rewound; use Claude Code's rewind (Esc twice) for that.")
+                opened = host.open_state(agent, new["head_version"], f"ANTIBODY: {new['name']} @ {self.sid(new['head_version'])}")
+                if opened:
+                    lines.append(f"Agent state ({opened['messages']} conversation entries) is ready as a new Claude Code session:")
+                    lines.append(f"  claude --resume {opened['session_id']}")
+                    lines.append("Resume it to continue exactly where that agent was. This session keeps its own history.")
+                    if opened["removed"]:
+                        lines.append(f"  ANTIBODY removed {len(opened['removed'])} quarantined instruction(s) from the restored conversation.")
+                else:
+                    lines.append("That version has no saved conversation (files only).")
                 out["output"] += "\n" + "\n".join(lines)
+                out.setdefault("data", {})["session"] = opened
             if out["branch_id"] != agent["config"].get("current_branch"):
-                cfg = dict(agent["config"], current_branch=out["branch_id"])
+                cfg = dict(self.core.coordinator.agent(agent["agent_id"])["config"], current_branch=out["branch_id"])
                 self.db.execute("UPDATE agents SET config_json=? WHERE agent_id=?", (dumps(cfg), agent["agent_id"]))
         return out
+
+    def cmd_rewind(self, pid, agent, branch, args, actor):
+        if agent["adapter"] != "claude_code_hooks":
+            raise CommandError("rewind is for Claude Code projects; use 'restore HEAD~1' here")
+        n = int(args[0]) if args and args[0].isdigit() else 1
+        vid = self.resolve(pid, agent["agent_id"], branch, f"HEAD~{n}")
+        f = self.v.fork(pid, vid, None, "restore", actor)
+        return {"output": f"Rewound {n} prompt(s) to {self.sid(vid)} {self._label(vid)} on new branch {f['branch']['name']} "
+                          f"(the newer work stays on {branch['name']}).", "branch_id": f["branch"]["branch_id"]}
+
+    def cmd_undo(self, pid, agent, branch, args, actor):
+        return self.cmd_rewind(pid, agent, branch, ["1"], actor)
+
+    def cmd_tree(self, pid, agent, branch, args, actor):
+        rows = self.v.branches(pid, agent["agent_id"])
+        by_parent: dict = {}
+        for b in rows:
+            by_parent.setdefault(b["parent_branch_id"], []).append(b)
+        lines = []
+
+        def walk(parent, depth):
+            for b in by_parent.get(parent, []):
+                n = self.db.scalar("SELECT COUNT(*) FROM versions WHERE branch_id=?", (b["branch_id"],))
+                mark = "*" if b["branch_id"] == branch["branch_id"] else " "
+                fork = f" from {self.sid(b['base_version'])}" if b["base_version"] and b["parent_branch_id"] else ""
+                lines.append(f"{mark} {'  ' * depth}{b['name']}{fork}: {n} version(s), head {self.sid(b['head_version'])} "
+                             f"{self._label(b['head_version']) if b['head_version'] else ''}".rstrip())
+                walk(b["branch_id"], depth + 1)
+        walk(None, 0)
+        return "\n".join(lines) or "No branches."
 
     def cmd_transcript(self, pid, agent, branch, args, actor):
         if agent["adapter"] != "claude_code_hooks":
@@ -192,7 +242,8 @@ class Commands:
             parents = loads(v["parents_json"], [])
             tag = " (merge)" if len(parents) > 1 else ""
             here = " <- HEAD" if not lines else ""
-            lines.append(f"{self.sid(vid)}  {v['created_at'][:19].replace('T', ' ')}  {v['label'] or '(no label)'}{tag}{here}")
+            num = f"~{len(lines):<3} " if agent["adapter"] == "claude_code_hooks" else ""
+            lines.append(f"{num}{self.sid(vid)}  {v['created_at'][:19].replace('T', ' ')}  {v['label'] or '(no label)'}{tag}{here}")
             vid = parents[0] if parents else None
         return "\n".join(lines) or "No saved versions on this branch yet."
 
@@ -217,6 +268,12 @@ class Commands:
             sa = self.v.manifest_state(pid, self.v.version(a)["manifest"])
             d = diff_states(self.v, pid, sa, self.v.working_state(branch["branch_id"], store=True))  # text diffs read the blobs
             title = f"{self.sid(a)} -> current (unsaved)"
+        conv = [x for x in d["summary"] if "_claude_session/" in x["text"]]
+        d["summary"] = [x for x in d["summary"] if "_claude_session/" not in x["text"]]
+        if conv:
+            d["summary"].append({"text": "conversation changed (saved with the version)"})
+        d["changes"]["files"] = [f for f in d["changes"].get("files", []) if not f.get("path", "").startswith("_claude_session/")]
+        d["change_keys"] = [k for k in d.get("change_keys", []) if "_claude_session/" not in k]
         if not d["summary"]:
             return f"No differences ({title})."
         lines = [f"Changes {title}:"] + [f"  {s['text']}" for s in d["summary"]]
@@ -273,6 +330,8 @@ class Commands:
         if not args:
             raise CommandError("merge from which branch or version?")
         src = self.resolve(pid, agent["agent_id"], branch, args[0])
+        if agent["adapter"] == "claude_code_hooks":
+            return self.core.claude_code.merge(pid, agent, branch, src, args[0], actor)
         if not branch["head_version"]:
             raise CommandError("save this branch first")
         if not self.v.is_clean(branch["branch_id"]):

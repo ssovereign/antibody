@@ -36,6 +36,7 @@ import shutil
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from . import cc_state as cc
 from .canonical import dumps, hash_value, loads, new_id, utcnow
 from .gateway.auditor import AuditorFailure
 from .gateway.gateway import Deny, SUSPICIOUS_QUERY
@@ -55,7 +56,6 @@ DEFAULT_ALLOWED = ["Bash", "PowerShell", "Write", "Edit", "MultiEdit", "Notebook
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", ".cache", ".antibody"}
 MAX_FILES, MAX_FILE_BYTES = 2000, 1_000_000
-TRANSCRIPT = "_claude_session/transcript.jsonl"
 
 NET_TOOLS = re.compile(r"(?<![\w.-])(curl|wget|nc|ncat|netcat|scp|sftp|rsync|ftp|telnet|ssh|http|https|invoke-webrequest|iwr|invoke-restmethod|irm|"
                        r"certutil|bitsadmin|socat)(?:\.exe)?(?![\w-])", re.I)
@@ -89,6 +89,7 @@ class ClaudeCodeGuard:
     def __init__(self, core):
         self.core = core
         self.db = core.db
+        self.runner_factory = None  # tests inject a scripted AgentRunner
 
     # ------------------------------------------------------------ setup
     def ensure_tools(self, project_id: str) -> None:
@@ -178,8 +179,18 @@ class ClaudeCodeGuard:
     # ------------------------------------------------------------ prompts: ab: commands
     def _prompt(self, project_id: str, agent: dict, run: dict, ev: dict) -> dict:
         text = str(ev.get("prompt", "")).strip()
+        sid = str(ev.get("session_id") or "")
+        if sid and agent["config"].get("current_session") != sid:
+            agent["config"]["current_session"] = sid
+            self.db.execute("UPDATE agents SET config_json=? WHERE agent_id=?", (dumps(agent["config"]), agent["agent_id"]))
         m = re.match(r"^(?:ab:|/ab\s|antibody:)\s*(.*)$", text, re.I | re.S)
         if not m:
+            if agent["config"].get("autosave", True):
+                try:  # checkpoint before every prompt: files + exact conversation, like Claude Code's rewind points
+                    self.checkpoint(agent, sid, "auto: " + " ".join(text.split())[:60], f"claude_code:{sid}")
+                except Exception as e:  # never block the user's prompt on a checkpoint problem
+                    self.core.journal.append(project_id, run["run_id"], "checkpoint.failed", {"error": f"{type(e).__name__}: {str(e)[:200]}"},
+                                             actor_type="host")
             return {"stdout": None, "exit": 0}
         branch_id = self._branch_id(agent)
         res = self.core.commands.run(project_id, agent["agent_id"], branch_id, m.group(1) or "help", f"claude_code:{ev.get('session_id')}")
@@ -428,36 +439,6 @@ class ClaudeCodeGuard:
             files.append(p)
         return files
 
-    def sync_workspace(self, agent: dict, branch: dict, include_transcript: bool = False) -> dict:
-        """Mirror the project folder into the branch workspace so status/diff/save see the real files.
-        The session transcript is copied only when saving (it changes with every message)."""
-        pdir = agent["config"]["project_dir"]
-        ws = Path(branch["workspace_dir"])
-        ws.mkdir(parents=True, exist_ok=True)
-        wanted = {str(p.relative_to(pdir)).replace("\\", "/"): p for p in self.project_files(pdir)}
-        keep = {TRANSCRIPT}
-        if include_transcript:
-            sess = self.db.one("SELECT transcript_path FROM host_sessions WHERE agent_id=? AND transcript_path IS NOT NULL ORDER BY last_seen DESC LIMIT 1",
-                               (agent["agent_id"],))
-            if sess and sess["transcript_path"] and os.path.exists(sess["transcript_path"]):
-                wanted[TRANSCRIPT] = Path(sess["transcript_path"])
-        for p in sorted(ws.rglob("*"), reverse=True):
-            rel = str(p.relative_to(ws)).replace("\\", "/")
-            if p.is_file() and rel not in wanted and rel not in keep:
-                p.unlink()
-            elif p.is_dir() and not any(p.iterdir()):
-                p.rmdir()
-        for rel, src in wanted.items():
-            dst = ws / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                data = src.read_bytes()
-            except OSError:
-                continue
-            if not dst.exists() or dst.read_bytes() != data:
-                dst.write_bytes(data)
-        return {"files": len(wanted)}
-
     def checkout(self, agent: dict, from_version: str | None, to_version: str) -> list[str]:
         """Make the project folder match a saved version, like `git checkout`: write its files and remove files
         that the previous version had but this one does not. Untracked files, .claude settings and the
@@ -466,7 +447,7 @@ class ClaudeCodeGuard:
         pdir = Path(agent["config"]["project_dir"])
         new = self.core.versions.manifest_state(pid, self.core.versions.version(to_version)["manifest"])["files"]
         old = self.core.versions.manifest_state(pid, self.core.versions.version(from_version)["manifest"])["files"] if from_version else {}
-        skip = lambda rel: rel == TRANSCRIPT or rel.startswith(".claude/settings") or rel == ".mcp.json"  # noqa: E731
+        skip = lambda rel: rel.startswith("_claude_session/") or rel.startswith(".claude/settings") or rel == ".mcp.json"  # noqa: E731
         changes = []
         for rel, info in new.items():
             dst = pdir / rel
@@ -486,30 +467,173 @@ class ClaudeCodeGuard:
             changes.append("removed " + rel)
         return changes
 
-    def transcript(self, project_id: str, version_id: str) -> str:
-        state = self.core.versions.manifest_state(project_id, self.core.versions.version(version_id)["manifest"])
-        info = state["files"].get(TRANSCRIPT)
-        if not info:
-            return "That version has no saved conversation."
-        lines = []
-        for raw in self.core.objects.get(project_id, info["blob"]).decode("utf-8", "ignore").splitlines():
+    def _transcript_path(self, agent: dict, session_id: str | None) -> str | None:
+        sid = session_id or agent["config"].get("current_session")
+        row = None
+        if sid:
+            row = self.db.one("SELECT transcript_path FROM host_sessions WHERE session_id=? AND transcript_path IS NOT NULL", (sid,))
+        if not row:
+            row = self.db.one("SELECT transcript_path FROM host_sessions WHERE agent_id=? AND transcript_path IS NOT NULL ORDER BY last_seen DESC LIMIT 1",
+                              (agent["agent_id"],))
+        p = row["transcript_path"] if row else None
+        return p if p and os.path.exists(p) else None
+
+    def sync_workspace(self, agent: dict, branch: dict, include_transcript: bool = False, session_id: str | None = None) -> dict:
+        """Mirror the project folder into the branch workspace so status/diff/save see the real files.
+        With include_transcript, the live Claude Code conversation is stored too (as fixed-size parts, so an
+        append-only transcript shares unchanged parts across checkpoints)."""
+        pdir = agent["config"]["project_dir"]
+        ws = Path(branch["workspace_dir"])
+        ws.mkdir(parents=True, exist_ok=True)
+        wanted: dict[str, bytes | Path] = {str(p.relative_to(pdir)).replace("\\", "/"): p for p in self.project_files(pdir)}
+        tpath = self._transcript_path(agent, session_id) if include_transcript else None
+        if tpath:
+            data = Path(tpath).read_bytes()
+            entries = cc.parse_lines(data)
+            for i, part in enumerate(cc.split_parts(data)):
+                wanted[f"{cc.PARTS_DIR}/{i:04d}.jsonl"] = part
+            sid = entries[0].get("sessionId") if entries else None
+            wanted[cc.META] = json.dumps({"session_id": session_id or sid, "leaf_uuid": cc.leaf_uuid(entries)}, sort_keys=True).encode()
+        for p in sorted(ws.rglob("*"), reverse=True):
+            rel = str(p.relative_to(ws)).replace("\\", "/")
+            if p.is_file() and rel not in wanted and not (rel.startswith("_claude_session/") and not tpath):
+                p.unlink()
+            elif p.is_dir() and not any(p.iterdir()):
+                p.rmdir()
+        for rel, src in wanted.items():
+            dst = ws / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
             try:
-                d = json.loads(raw)
-            except ValueError:
+                data = src if isinstance(src, bytes) else src.read_bytes()
+            except OSError:
                 continue
-            if d.get("type") not in ("user", "assistant"):
-                continue
-            msg = d.get("message") or {}
-            content = msg.get("content")
-            if isinstance(content, list):
-                parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
-                tools = [c.get("name") for c in content if isinstance(c, dict) and c.get("type") == "tool_use"]
-                txt = " ".join(p for p in parts if p).strip() + (f" [used {', '.join(tools)}]" if tools else "")
-            else:
-                txt = str(content or "")
-            if txt.strip():
-                lines.append(f"{'You' if d['type'] == 'user' else 'Claude'}: {txt.strip()[:400]}")
-        return "\n".join(lines[-40:]) or "The saved conversation has no readable messages."
+            if not dst.exists() or dst.read_bytes() != data:
+                dst.write_bytes(data)
+        return {"files": len(wanted), "conversation": bool(tpath)}
+
+    def checkpoint(self, agent: dict, session_id: str | None, label: str, actor: str) -> dict | None:
+        """Save files + the exact conversation, like Claude Code's per-message checkpoints (but of the whole folder)."""
+        branch = self.core.versions.branch(self._branch_id(agent))
+        # tool calls of the previous turn that never reported back (interrupted) are closed out first
+        now = utcnow()
+        for e in self.db.all("SELECT e.operation_id, e.project_id FROM effects e JOIN runs r ON r.run_id=e.run_id "
+                             "WHERE r.agent_id=? AND e.state='DISPATCHING' AND e.lease_owner='host:claude_code'", (agent["agent_id"],)):
+            self.db.execute("UPDATE effects SET state='FAILED', lease_owner=NULL, error_json=?, updated_at=? WHERE project_id=? AND operation_id=?",
+                            (dumps({"message": "no result reported (interrupted)"}), now, e["project_id"], e["operation_id"]))
+        self.sync_workspace(agent, branch, include_transcript=True, session_id=session_id)
+        if branch["head_version"] and self.core.versions.is_clean(branch["branch_id"]):
+            return None
+        return self.core.versions.save(agent["project_id"], branch["branch_id"], None, label, actor)
+
+    def state_chain(self, project_id: str, version_id: str) -> tuple[list[dict], dict | None]:
+        files = self.core.versions.manifest_state(project_id, self.core.versions.version(version_id)["manifest"])["files"]
+        parts = sorted(k for k in files if k.startswith(cc.PARTS_DIR + "/"))
+        if not parts or cc.META not in files:
+            return [], None
+        data = b"".join(self.core.objects.get(project_id, files[k]["blob"]) for k in parts)
+        meta = json.loads(self.core.objects.get(project_id, files[cc.META]["blob"]))
+        return cc.chain(cc.parse_lines(data), meta.get("leaf_uuid")), meta
+
+    def patterns(self, project_id: str) -> list[dict]:
+        return self.core.registry.active(project_id, kind="threat_pattern")
+
+    def open_state(self, agent: dict, version_id: str, title: str) -> dict | None:
+        """Turn a saved agent state into a new Claude Code session (screened), ready to resume."""
+        pid = agent["project_id"]
+        ch, meta = self.state_chain(pid, version_id)
+        if not ch:
+            return None
+        clean, removed = cc.screen_chain(ch, self.patterns(pid))
+        sid, path = cc.write_session(clean, agent["config"]["project_dir"], title)
+        self.core.journal.append(pid, f"agent:{agent['agent_id']}", "agent_state.opened",
+                                 {"version_id": version_id, "session_id": sid, "messages": len(clean), "removed": removed}, actor_type="host")
+        return {"session_id": sid, "path": str(path), "messages": len(clean), "removed": removed}
+
+    def transcript(self, project_id: str, version_id: str) -> str:
+        ch, _ = self.state_chain(project_id, version_id)
+        if not ch:
+            return "That version has no saved conversation."
+        return "\n".join(cc.summarize(ch)) or "The saved conversation has no readable messages."
+
+    def runner(self):
+        return self.runner_factory() if self.runner_factory else cc.AgentRunner(self.core)
+
+    def merge(self, project_id: str, agent: dict, branch: dict, theirs: str, theirs_name: str, actor: str) -> dict:
+        """Negotiated merge of another branch (version) into this one. See server/cc_merge.py."""
+        from . import cc_merge
+        v = self.core.versions
+        ours = branch["head_version"]
+        base = v.common_ancestor(ours, theirs)
+        if not base:
+            raise InvalidRequest("NO_COMMON_ANCESTOR", "These two branches share no saved starting point.")
+        if base == theirs:
+            return {"output": f"Nothing to merge: {theirs_name} is already part of {branch['name']}."}
+
+        def files(vid):
+            st = v.manifest_state(project_id, v.version(vid)["manifest"])["files"]
+            return {k: self.core.objects.get(project_id, i["blob"]) for k, i in st.items() if not k.startswith("_claude_session/")}
+        fb, fo, ft = files(base), files(ours), files(theirs)
+        units = cc_merge.compute_units(fb, fo, ft)
+        if not units:
+            return {"output": f"Nothing to merge: {theirs_name} has no file changes that {branch['name']} lacks."}
+        if len(units) > cc_merge.MAX_UNITS:
+            raise InvalidRequest("MERGE_TOO_LARGE", f"{len(units)} separate changes; merge at most {cc_merge.MAX_UNITS} at a time.")
+        pats = self.patterns(project_id)
+        ch_o = cc.screen_chain(self.state_chain(project_id, ours)[0], pats)[0]
+        ch_t = cc.screen_chain(self.state_chain(project_id, theirs)[0], pats)[0]
+        runner = self.runner()
+        work = Path(self.core.config.DATABASE_PATH).parent / "cc_agents" / new_id("merge")
+        work.mkdir(parents=True, exist_ok=True)  # agents run here, away from the project's hooks and files
+        try:
+            h_o = runner.start(ch_o, str(work), f"ANTIBODY merge: {branch['name']} side") if ch_o else None
+            h_t = runner.start(ch_t, str(work), f"ANTIBODY merge: {theirs_name} side") if ch_t else None
+        except cc.BackendUnavailable as e:
+            raise InvalidRequest("NO_AGENT_BACKEND", str(e))
+        goal = self.core.projects.get_task(project_id, agent["config"]["task_id"])["body"]["goal"]
+        neg = cc_merge.Negotiation(runner, units, {"ours": branch["name"], "theirs": theirs_name}, goal)
+        try:
+            final = neg.run(h_o, h_t)
+        except cc.BackendUnavailable as e:
+            raise InvalidRequest("NO_AGENT_BACKEND", str(e))
+        merged = cc_merge.assemble(fb, fo, ft, units, final)
+        record = dict(neg.record, base=base, ours=ours, theirs=theirs, at=utcnow())
+        # merged agent state: our exact conversation + a merge record carrying the coworker's handoff
+        hand_t = neg.record["handoffs"].get("theirs") or {}
+        decisions = "\n".join(f"- {u['path']} ({u['kind']}): {final[u['id']]['decision']} [{final[u['id']]['by']}]" for u in units)
+        note = (f"[ANTIBODY merge record] Your branch '{branch['name']}' was merged with '{theirs_name}' (a coworker who started from the same "
+                f"saved point). The project files now contain the merged result.\nDecisions:\n{decisions}\n"
+                f"Coworker's handoff: {json.dumps(hand_t, ensure_ascii=False)[:6000]}")
+        ack = "Understood. I have the merged files and my coworker's handoff, and will continue from the merged state."
+        merged_chain = ch_o + cc.synthetic_turn(ch_o, note, ack) if ch_o else cc.synthetic_turn([], note, None)
+        blobs = {k: {"blob": self.core.objects.put(project_id, b)} for k, b in merged.items()}
+        jsonl = "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in merged_chain).encode("utf-8")
+        for i, part in enumerate(cc.split_parts(jsonl)):
+            blobs[f"{cc.PARTS_DIR}/{i:04d}.jsonl"] = {"blob": self.core.objects.put(project_id, part)}
+        blobs[cc.META] = {"blob": self.core.objects.put(project_id, json.dumps(
+            {"session_id": None, "leaf_uuid": cc.leaf_uuid(merged_chain)}, sort_keys=True).encode())}
+        blobs[cc.MERGE_RECORD] = {"blob": self.core.objects.put(project_id, json.dumps(record, ensure_ascii=False, indent=1, default=str).encode())}
+        v.reset_workspace(project_id, branch["workspace_dir"], blobs)
+        nv = v.save(project_id, branch["branch_id"], None, f"merge {theirs_name} (negotiated)", actor, parents=[ours, theirs])
+        changes = self.checkout(agent, ours, nv["version_id"])
+        opened = self.open_state(agent, nv["version_id"], f"ANTIBODY: merged {branch['name']} + {theirs_name}")
+        self.core.journal.append(project_id, f"agent:{agent['agent_id']}", "merge.negotiated",
+                                 {"version_id": nv["version_id"], "base": base, "ours": ours, "theirs": theirs, "units": record["units"],
+                                  "backend": record["backend"], "arbiter_used": bool(record["arbiter"])}, actor_type="host")
+        by = {}
+        for u in units:
+            by.setdefault(final[u["id"]]["by"], 0)
+            by[final[u["id"]]["by"]] += 1
+        lines = [f"Merged {theirs_name} into {branch['name']} as {nv['version_id'][7:17]} after negotiation "
+                 f"({', '.join(f'{n} {k}' for k, n in by.items())}; agents ran via {record['backend'] or 'n/a'})."]
+        for u in units:
+            d = final[u["id"]]
+            why = d.get("reason") or next((x.get("ours", {}) or {}).get("reason", "") for x in record["units"][u["id"]]["votes"][-1:]) or ""
+            lines.append(f"  {u['id']} {u['path']} [{u['kind']}] -> {d['decision']} ({d['by']}){': ' + why[:140] if why else ''}")
+        lines.append(f"Project folder: {len(changes)} file change(s).")
+        if opened:
+            lines.append(f"Merged agent state: claude --resume {opened['session_id']}")
+        return {"output": "\n".join(lines), "data": {"version_id": nv["version_id"], "record": record, "checked_out": True,
+                                                    "session": opened}}
 
     # ------------------------------------------------------------ install into a project folder
     def install(self, project_id: str, project_dir: str, python: str, repo_root: str) -> dict:
@@ -522,6 +646,7 @@ class ClaudeCodeGuard:
         token = self._hook_token(project_id)
         hook_script = str(Path(repo_root) / "scripts" / "claude_hook.py")
         cmd = {"type": "command", "command": python, "args": [hook_script, "--project", project_id, "--dir", str(pdir)], "timeout": 30}
+        long_cmd = dict(cmd, timeout=1800)  # ab: merge runs agents and can take minutes
         settings_path = pdir / ".claude" / "settings.local.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         data = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
@@ -530,7 +655,7 @@ class ClaudeCodeGuard:
                                ("PostToolUseFailure", "*"), ("SessionEnd", None)):
             groups = [g for g in hooks.get(event, []) if not any("claude_hook.py" in " ".join([h.get("command", "")] + h.get("args", []))
                                                                 for h in g.get("hooks", []))]
-            group = {"hooks": [cmd]}
+            group = {"hooks": [long_cmd if event == "UserPromptSubmit" else cmd]}
             if matcher:
                 group["matcher"] = matcher
             groups.append(group)

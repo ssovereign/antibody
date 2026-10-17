@@ -84,6 +84,13 @@ If ANTIBODY is not running, calls that can change things ask you. Set `ANTIBODY_
 
 This is a policy check on tool calls, not an operating-system sandbox. The installer refuses the ANTIBODY folder itself.
 
+**Saved agent states and negotiated merge (Claude Code).** A checkpoint (files plus the exact conversation) is taken before every prompt.
+- `ab: undo` / `ab: rewind n` / `ab: restore <ref>` / `ab: switch <branch>` put the files back and print `claude --resume <id>`, a new session holding exactly that agent's conversation (screened for quarantined content).
+- `ab: tree` shows the branch tree.
+- `ab: merge <branch>` has both agents vote on every change from their own saved conversations, with a second round and then an arbiter for disagreements. Code applies the result.
+
+Needs the Claude Code CLI signed in once (`claude`, then `/login`) or an API key in Settings. Step-by-step checks for everything are in [`docs/TESTING.md`](docs/TESTING.md).
+
 **Claude Code / Claude Desktop over MCP.** *Settings → Connect Claude Code* shows a ready-made `claude mcp add …` command and `.mcp.json` block. They run `scripts/mcp_serve.py`, which serves ANTIBODY's tools limited to the `mcp_tools` assignment. Every call is checked and recorded as a run of the "Claude Code (via MCP)" agent. Only tools reached through ANTIBODY are protected; the host's own built-in tools are not.
 
 ## What the demo shows
