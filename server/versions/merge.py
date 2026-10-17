@@ -133,5 +133,6 @@ class MergeService:
                 st[k] = merged[k]
         self.store.set_state(target_branch, st)
         self.store.reset_workspace(project_id, tb["workspace_dir"], merged["files"])
+        self.store.carry_artifact_checks(project_id, target_branch, merged["files"])
         v = self.store.save(project_id, target_branch, head, f"merge {source_version[7:15]}", actor, parents=[head, source_version])
         return {"version": v, "applied": applied, "ancestor": anc, "evaluation_id": evaluation["evaluation_id"]}

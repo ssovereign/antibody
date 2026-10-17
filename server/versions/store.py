@@ -164,7 +164,8 @@ class VersionStore:
                             actor_type="version_service")
         return self.version(version_id)
 
-    def snapshot_tree(self, project_id: str, workspace_dir: str) -> dict:
+    def snapshot_tree(self, project_id: str, workspace_dir: str, store: bool = True) -> dict:
+        """Tree of the workspace. With store=False only hashes are computed (read-only comparison)."""
         root = Path(workspace_dir)
         tree = {}
         for p in sorted(root.rglob("*")):
@@ -172,7 +173,8 @@ class VersionStore:
                 if p.is_symlink():
                     continue
                 data = p.read_bytes()
-                tree[str(p.relative_to(root)).replace("\\", "/")] = {"blob": self.objects.put(project_id, data), "size": len(data)}
+                ref = self.objects.put(project_id, data) if store else content_ref(data)
+                tree[str(p.relative_to(root)).replace("\\", "/")] = {"blob": ref, "size": len(data)}
         return {"schema_version": 1, "files": tree}
 
     # ================================================================ read
@@ -233,7 +235,9 @@ class VersionStore:
         for ref in m["lesson_revisions"]:
             if self.core.registry.ref_revoked(project_id, ref):
                 excluded.append({"ref": ref, "reason": "globally revoked; will not be retrieved"})
-        pending = self.db.all("SELECT operation_id, tool_id, state, run_id FROM effects WHERE project_id=? AND state IN ('UNKNOWN','DISPATCHING')", (project_id,))
+        agent_id = self.db.scalar("SELECT agent_id FROM branches WHERE branch_id=?", (v["branch_id"],))
+        pending = self.db.all("SELECT e.operation_id, e.tool_id, e.state, e.run_id FROM effects e JOIN runs r ON r.run_id=e.run_id "
+                              "WHERE e.project_id=? AND r.agent_id=? AND e.state IN ('UNKNOWN','DISPATCHING')", (project_id, agent_id))
         task_note = None
         if m.get("task_revision_ref"):
             tid, rev = m["task_revision_ref"].split("@")
@@ -264,6 +268,7 @@ class VersionStore:
         nb = self.create_branch(project_id, src_branch["agent_id"], name or f"{purpose}-{version_id[7:15]}", state,
                                 parent_branch_id=src_branch["branch_id"], base_version=version_id, purpose=purpose)
         self.materialize(project_id, loaded["files"], nb["workspace_dir"])
+        self.carry_artifact_checks(project_id, nb["branch_id"], loaded["files"])
         cursor = loaded["adapter_state"]
         if preview["capabilities"]["restore_cursor"]:
             self.core.coordinator.restore_adapter_state(nb, cursor, version_id)
@@ -272,6 +277,20 @@ class VersionStore:
                              "excluded_knowledge": preview["excluded_knowledge"], "policy": preview["policy"]},
                             actor_type="version_service")
         return {"branch": self.branch(nb["branch_id"]), **preview}
+
+    def carry_artifact_checks(self, project_id: str, branch_id: str, files: dict) -> int:
+        """Verified-check records are bound to exact content; carry them to a branch holding identical bytes."""
+        n = 0
+        for rel, info in files.items():
+            digest = info["blob"]
+            row = self.db.one("SELECT * FROM artifacts WHERE project_id=? AND path=? AND content_hash=? ORDER BY updated_at DESC LIMIT 1",
+                              (project_id, rel, digest))
+            if row:
+                self.db.execute("INSERT OR REPLACE INTO artifacts(project_id,branch_id,path,content_hash,run_id,operation_id,data_class,check_status,check_detail_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                (project_id, branch_id, rel, digest, row["run_id"], row["operation_id"], row["data_class"], row["check_status"],
+                                 row["check_detail_json"], utcnow()))
+                n += 1
+        return n
 
     def materialize(self, project_id: str, files: dict, workspace_dir: str) -> None:
         """Copy immutable blobs into a separate writable directory. Never hard-link."""
@@ -306,9 +325,9 @@ class VersionStore:
         sa, sb = self.manifest_state(project_id, va["manifest"]), self.manifest_state(project_id, vb["manifest"])
         return diff_states(self, project_id, sa, sb, va["manifest"], vb["manifest"])
 
-    def working_state(self, branch_id: str) -> dict:
+    def working_state(self, branch_id: str, store: bool = True) -> dict:
         b = self.branch(branch_id)
-        tree = self.snapshot_tree(b["project_id"], b["workspace_dir"])
+        tree = self.snapshot_tree(b["project_id"], b["workspace_dir"], store=store)
         st = b["state"]
         return {"instructions": st.get("instructions", ""), "model": st.get("model", {}), "environment": st.get("environment", {}),
                 "lesson_revisions": st.get("lesson_revisions", []), "disabled_lessons": st.get("disabled_lessons", []),
@@ -319,7 +338,7 @@ class VersionStore:
         if not b["head_version"]:
             return False
         head = self.manifest_state(b["project_id"], self.version(b["head_version"])["manifest"])
-        ws = self.working_state(branch_id)
+        ws = self.working_state(branch_id, store=False)
         keys = ("instructions", "lesson_revisions", "disabled_lessons", "memory_facts", "files")
         return all(_norm(head[k]) == _norm(ws[k]) for k in keys)
 

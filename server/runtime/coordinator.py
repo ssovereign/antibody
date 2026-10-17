@@ -158,7 +158,7 @@ class Coordinator:
             prev = self.run(continue_from)
             seed = self.core.agent.get_state(prev["thread_id"])
             self._bind_ops(rid, self._ops_for(prev["run_id"]), continue_from)
-        elif cursor and cursor.get("state"):
+        elif cursor and cursor.get("state") and (cursor.get("task_ref") or "").split("@")[0] == tid:
             seed = cursor["state"]
             self._bind_ops(rid, cursor.get("operation_ids", []), cursor.get("run_id") or "restored")
             st = branch["state"]
@@ -166,6 +166,13 @@ class Coordinator:
             self.core.versions.set_state(branch_id, st)
         if seed:
             seed = {k: v for k, v in seed.items() if k in ("observations", "progress", "pending", "action_id", "operation_id", "steps")}
+            # keep validated progress; reset per-attempt counters of the historical run
+            prog = dict(seed.get("progress") or {})
+            if not (prog.get("report") or {}).get("checked_passed"):
+                prog.pop("report", None)
+            prog.pop("denied", None)
+            seed["progress"] = prog
+            seed["steps"] = 0
             seed.update({"run_id": rid, "branch_id": branch_id, "thread_id": thread_id, "task_revision": cur, "next_phase": "prepare"})
             self.core.agent.seed_state(thread_id, seed)
         if wait:
@@ -313,6 +320,12 @@ class Coordinator:
         if out:
             art = self.db.one("SELECT check_status FROM artifacts WHERE project_id=? AND branch_id=? AND path=?", (run["project_id"], run["branch_id"], out))
             reason = "TASK_CHECK_PASSED" if art and art["check_status"] == "passed" else "TASK_CHECK_FAILED"
+        health = self.run(run["run_id"])["health"]
+        if health in ("Recovering", "Degraded"):
+            if reason in ("TASK_CHECK_PASSED", "FINISHED"):
+                self.core.health.transition(run["run_id"], "Healthy", "INDEPENDENT_CHECKS_PASS", {"final_check": reason})
+            else:
+                self.core.health.transition(run["run_id"], "Paused", "TASK_CHECK_FAILED", {"final_check": reason})
         self.set_status(run["run_id"], "completed", reason)
 
     def add_cost(self, run_id: str, in_tok: int | None, out_tok: int | None, kind: str) -> None:
@@ -625,7 +638,7 @@ class Coordinator:
     def restore_adapter_state(self, branch: dict, cursor: dict, version_id: str) -> None:
         st = self.core.versions.branch(branch["branch_id"])["state"]
         st["restored_cursor"] = {"state": cursor.get("state"), "operation_ids": cursor.get("operation_ids", []),
-                                 "run_id": cursor.get("run_id"), "version_id": version_id}
+                                 "run_id": cursor.get("run_id"), "version_id": version_id, "task_ref": cursor.get("task_ref")}
         self.core.versions.set_state(branch["branch_id"], st)
 
     # ================================================================ restart recovery

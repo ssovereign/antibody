@@ -34,6 +34,7 @@ from ..schemas import (ActionProposal, CandidateRevise, EvaluateRequest, ForkReq
                        PreferenceSet, ProjectCreate, PromoteRequest, RevokeRequest, RunStart, SourceImport, TaskCreate, VersionSave)
 from ..storage.db import StorageUnavailable
 from ..versions.store import diff_states
+from ..telemetry import disk_status
 
 
 def load_secrets(core: Core) -> dict:
@@ -45,7 +46,14 @@ def load_secrets(core: Core) -> dict:
 
 def create_app(core: Core | None = None) -> FastAPI:
     core = core or Core(start_workers=True)
-    app = FastAPI(title="ANTIBODY", version="1.0.0", description="Protected agent workspace with RECEIPT version history.")
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        yield
+        core.shutdown()  # safe shutdown barrier: stop dispatch, pause active runs
+
+    app = FastAPI(title="ANTIBODY", version="1.0.0", description="Protected agent workspace with RECEIPT version history.", lifespan=lifespan)
     app.state.core = core
     cfg = core.config
     app.add_middleware(CORSMiddleware, allow_origins=[cfg.UI_ORIGIN, "http://localhost:5173", f"http://127.0.0.1:{cfg.API_PORT}",
@@ -122,8 +130,10 @@ def create_app(core: Core | None = None) -> FastAPI:
             ok = integrity == "ok"
         except Exception:
             ok = False
+        disk = disk_status(core.config.OBJECT_STORE_ROOT)
+        ok = ok and disk["ok"]
         return {"status": "ok" if ok else "degraded", "protection": "active" if ok else "unknown", "schema_version": core.db.schema_version(),
-                "time": utcnow(), "startup_recovery": core.recovery_report}
+                "time": utcnow(), "disk": disk, "startup_recovery": core.recovery_report}
 
     @app.post("/v1/session/bootstrap")
     def bootstrap(request: Request, body: dict = Body(default={})):

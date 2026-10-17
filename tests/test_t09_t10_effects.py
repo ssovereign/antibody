@@ -31,7 +31,7 @@ def test_restore_after_completed_send_does_not_send_twice(core):
     assert "Completed external actions remain recorded" in f["message"]
     r = core.coordinator.start_run(PID, a["agent_id"], "t_send", branch_id=f["branch"]["branch_id"], wait=True)
     r = core.coordinator.run(r["run_id"])
-    assert r["status"] == "completed"
+    assert (r["status"], r["status_reason"]) == ("completed", "TASK_CHECK_PASSED")  # verified artifact record carried with identical bytes
     assert core.executors.outbox.count(PID) == 1
     assert core.db.scalar("SELECT COUNT(*) FROM executor_invocations WHERE operation_id=?", (send_op,)) == 1
     dedup = [e for e in core.journal.events(r["run_id"]) if e["kind"] == "action.decided" and e["payload"]["reason_code"] == "DEDUPLICATED"]

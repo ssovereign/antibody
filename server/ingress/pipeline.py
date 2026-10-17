@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..canonical import content_ref, dumps, loads, new_id, utcnow
 from .normalize import exact_hash, norm_hash
+from ..telemetry import traced
 from .parsers import (PARSER_REVISION, IngestError, ParsedSource, detect_parser, parse_event_json, parse_html, parse_ics,
                       parse_log, parse_subagent, parse_text, parse_tool_result)
 
@@ -93,6 +94,7 @@ class SourceService:
                           (sid, ex["kind"], ex.get("start"), ex.get("end"), dumps(ex.get("detail", {})), now))
         return self.get(sid)
 
+    @traced("source.ingest")
     def ingest_bytes(self, project_id: str, channel: str, data: bytes, filename: str | None = None,
                      content_type: str | None = None, origin: str = "EXTERNAL_DATA", label: str | None = None,
                      run_id: str | None = None, extra_meta: dict | None = None) -> dict:
@@ -214,6 +216,17 @@ class SourceService:
             return self.objects.get(s["project_id"], s["raw_ref"], restricted=True)
         except FileNotFoundError:
             return None
+
+    def purge_expired_raw(self, project_id: str, retention_days: int) -> int:
+        """Purge restricted raw evidence older than the retention window; a redacted audit reference remains."""
+        from datetime import timedelta
+        from ..canonical import utcnow_dt
+        cutoff = (utcnow_dt() - timedelta(days=retention_days)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        n = 0
+        for r in self.db.all("SELECT source_id FROM sources WHERE project_id=? AND raw_ref IS NOT NULL AND retrieved_at < ?", (project_id, cutoff)):
+            if self.purge_raw(r["source_id"]):
+                n += 1
+        return n
 
     def purge_raw(self, source_id: str) -> bool:
         s = self.get(source_id)

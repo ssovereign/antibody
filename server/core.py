@@ -72,6 +72,12 @@ class Core:
         self.health.transition(run_id, "Paused", "REPEAT_FAILURE_LIMIT", {"incident_id": incident["incident_id"], "note": "automatic recovery disabled"})
         self.coordinator.set_status(run_id, "paused", "REPEAT_FAILURE_LIMIT")
 
+    def shutdown(self) -> None:
+        """Safe shutdown barrier: stop workers, then pause active runs so nothing dispatches unguarded."""
+        self.jobs.stop()
+        for r in self.db.all("SELECT run_id FROM runs WHERE status IN ('running','recovering')"):
+            self.coordinator.set_status(r["run_id"], "paused", "SERVICE_SHUTDOWN")
+
     def close(self) -> None:
         self.jobs.stop()
         self.agent.close()

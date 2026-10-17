@@ -35,6 +35,7 @@ from ..schemas import REASON_CODES, ActionProposal, DecisionView
 from ..storage.db import StorageUnavailable
 from .auditor import AuditorFailure
 from .jsonschema_lite import SchemaError, validate
+from ..telemetry import log_event, traced
 
 ANCHOR_ARGS = {"recipient_id", "artifact_path", "url", "payee_id", "path", "subject"}
 SUSPICIOUS_QUERY = re.compile(r"[A-Za-z0-9+/=_-]{40,}")
@@ -66,6 +67,7 @@ class Gateway:
         self.on_effect = []    # callbacks(run, effect_row, result)
 
     # ================================================================ submit
+    @traced("gateway.submit")
     def submit(self, run_id: str, proposal: ActionProposal, worker: dict) -> DecisionView:
         run = self.db.one("SELECT * FROM runs WHERE run_id=?", (run_id,))
         if not run:
@@ -450,6 +452,7 @@ class Gateway:
                              "reason_code": code, "message": message, "checks": checks or [], "audit": audit,
                              "attribution_status": attribution, "executor_invoked": False},
                             actor_type="gateway", evidence_refs=evidence, policy_revision=policy_rev, registry_revision=registry_rev)
+        log_event("action.decided", run_id=run["run_id"], decision_id=decision_id, tool_id=p.tool_id, outcome=outcome, reason_code=code)
         for cb in self.on_decision:
             cb(run, view)
         return view
@@ -468,6 +471,7 @@ class Gateway:
                             result=result, effect_state="COMPLETED", deduplicated=True)
 
     # ================================================================ dispatch
+    @traced("gateway.dispatch")
     def dispatch(self, decision_id: str, worker_id: str) -> DecisionView:
         d = self.db.one("SELECT * FROM decisions WHERE decision_id=?", (decision_id,))
         pid = d["project_id"]
@@ -554,6 +558,7 @@ class Gateway:
         self.journal.append(pid, run["run_id"], kind, {"operation_id": d["operation_id"], "tool_id": d["tool_id"], "state": state,
                                                        "result": redact(result) if result else None, "error": error},
                             actor_type="executor", evidence_refs=[f"decision:{decision_id}"])
+        log_event("effect." + state.lower(), run_id=run["run_id"], operation_id=d["operation_id"], tool_id=d["tool_id"], error_code=(error or {}).get("code"))
         eff_row = self.db.one("SELECT * FROM effects WHERE project_id=? AND operation_id=?", (pid, d["operation_id"]))
         if body_bytes is not None:
             result = dict(result, body_bytes=body_bytes)

@@ -98,8 +98,10 @@ def summary_markdown(b: dict, final_eval: dict | None) -> str:
                      + "; ".join(f"{k}: {v}" for k, v in e["summary"].items() if isinstance(v, str)))
     if final_eval:
         lines += ["", "## Frozen final comparison (baseline ladder)", "", f"Suite {final_eval['suite']}, mode {final_eval['mode']}, {final_eval['repeats']} repeats per case (deterministic planner: repeats are identical).", "",
-                  "| Baseline | Family | Kind | Passed | Unauthorized effects | Early quarantines | Steps |", "|---|---|---|---|---|---|---|"]
+                  "| Baseline | Family | Kind | Task completion | Unauthorized effects | Unsafe proposals | Early interceptions | False positives | Outcome expectations met | Steps |",
+                  "|---|---|---|---|---|---|---|---|---|---|"]
         for r in final_eval["table"]:
-            lines.append(f"| {r['baseline']} | {r['family']} | {r['kind']} | {r['pass_rate']} | {r['unauthorized_effects']} | {r['early_quarantines']} | {r['steps']} |")
+            lines.append(f"| {r['baseline']} | {r['family']} | {r['kind']} | {r['task_completion']} | {r['unauthorized_effects']} | {r['unsafe_proposals']} | "
+                         f"{r['early_quarantines']} | {r['false_positives']} | {r['pass_rate']} | {r['steps']} |")
     lines += ["", "Failing as well as passing cases are included in export.json and final_evaluation.json."]
     return "\n".join(lines) + "\n"

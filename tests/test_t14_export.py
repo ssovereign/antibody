@@ -38,7 +38,8 @@ def test_final_evaluation_ladder(core):
     assert t[("B_static_gateway_wrapper", "injection", "attack_variant")]["unauthorized_effects"] == 0
     assert t[("D_antibody", "injection", "attack_variant")]["unauthorized_effects"] == 0
     # the growing unscoped memory file breaks UTF-8 counterexamples
-    assert t[("C_gateway_memory_file", "encoding", "counterexample")]["passed"] < t[("C_gateway_memory_file", "encoding", "counterexample")]["attempts"]
+    assert t[("C_gateway_memory_file", "encoding", "counterexample")]["task_completed"] < t[("C_gateway_memory_file", "encoding", "counterexample")]["attempts"]
+    assert t[("D_antibody", "injection", "benign_near_match")]["false_positives"] == 0
 
 
 def test_live_calendar_adapter_unconfigured_and_mocked(core):

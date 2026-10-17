@@ -22,6 +22,7 @@ from ..canonical import canonical_bytes, dumps, loads, new_id, utcnow
 from ..config import ROOT, Config
 from ..projects import ConflictError, InvalidRequest, NotFound
 from . import checkers
+from ..telemetry import traced
 
 SUITES_DIR = ROOT / "fixtures" / "suites"
 CHECKER_FILE = Path(checkers.__file__)
@@ -172,6 +173,7 @@ class Evaluator:
         }
 
     # ------------------------------------------------------------ candidate evaluation (validation split)
+    @traced("evaluation.candidate")
     def evaluate_candidate(self, project_id: str, candidate: dict, suite_ref: str | None, actor: str) -> dict:
         suite = self.suite(suite_ref)
         body = candidate["body"]
@@ -321,7 +323,9 @@ class Evaluator:
                         o = self.run_plain(case)
                     else:
                         o = self.run_case(case, [dict(l, under_test=False) for l in cfg["lessons"]], cfg["patterns"])
-                    chk = checkers.check_case(case, o)
+                    # outcome expectations only: whether a lesson fired is a mechanism check used for candidate validation
+                    outcome_case = dict(case, expect={k: v for k, v in case["expect"].items() if k != "lesson_applied"})
+                    chk = checkers.check_case(outcome_case, o)
                     rows.append({"baseline": name, "case_id": case["case_id"], "family": case["family"], "kind": case["kind"],
                                  "repeat": rep + 1, "passed": chk["passed"], "observed": _obs(o), "checks": chk["checks"]})
         return {"suite": suite["ref"], "checker_hash": suite["checker_hash"], "mode": "simulated", "repeats": repeats,
@@ -419,19 +423,32 @@ def _sanitize(case: dict, chk: dict) -> str:
     return "all checks passed" if not failed else "failed checks: " + ", ".join(failed)
 
 
+def _pct(n: int, d: int) -> str:
+    return f"{n} of {d} ({round(100 * n / d) if d else 0}%)"
+
+
 def _table(rows: list[dict]) -> list[dict]:
+    """Separate measures (Technical Design: Evaluation and release evidence) per baseline, family and case kind."""
     agg: dict[tuple, dict] = {}
     for r in rows:
         k = (r["baseline"], r["family"], r["kind"])
-        a = agg.setdefault(k, {"baseline": k[0], "family": k[1], "kind": k[2], "attempts": 0, "passed": 0, "unauthorized_effects": 0,
-                               "early_quarantines": 0, "steps": 0})
+        a = agg.setdefault(k, {"baseline": k[0], "family": k[1], "kind": k[2], "attempts": 0, "passed": 0, "task_completed": 0,
+                               "unauthorized_effects": 0, "unsafe_proposals": 0, "early_quarantines": 0, "false_positives": 0, "steps": 0})
+        o = r["observed"]
         a["attempts"] += 1
         a["passed"] += 1 if r["passed"] else 0
-        a["unauthorized_effects"] += r["observed"].get("unauthorized_effects") or 0
-        a["early_quarantines"] += 1 if (r["observed"].get("ingress_quarantines") or 0) > 0 else 0
-        a["steps"] += r["observed"].get("steps") or 0
+        a["task_completed"] += 1 if o.get("task_completed") else 0
+        a["unauthorized_effects"] += o.get("unauthorized_effects") or 0
+        a["unsafe_proposals"] += o.get("unsafe_proposals") or 0
+        quarantined = (o.get("ingress_quarantines") or 0) > 0
+        if r["kind"] == "benign_near_match":
+            a["false_positives"] += 1 if quarantined else 0
+        else:
+            a["early_quarantines"] += 1 if quarantined else 0
+        a["steps"] += o.get("steps") or 0
     out = []
     for a in agg.values():
-        a["pass_rate"] = f"{a['passed']} of {a['attempts']} ({round(100 * a['passed'] / a['attempts'])}%)"
+        a["pass_rate"] = _pct(a["passed"], a["attempts"])
+        a["task_completion"] = _pct(a["task_completed"], a["attempts"])
         out.append(a)
     return sorted(out, key=lambda x: (x["family"], x["kind"], x["baseline"]))

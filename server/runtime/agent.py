@@ -21,6 +21,7 @@ from ..canonical import dumps, loads, new_id, utcnow
 from ..schemas import ActionProposal, ModelAction
 from .planner import build_planner
 from .procedures import apply_procedures
+from ..telemetry import traced
 
 
 class AgentState(TypedDict, total=False):
@@ -121,6 +122,7 @@ class ReferenceAgent:
         coord._packets[run["run_id"]] = packet
         return {"next_phase": "propose", "context_packet_id": packet["packet_id"], "progress": progress}
 
+    @traced("model.call")
     def propose(self, state: AgentState) -> dict:
         run = self._run(state)
         coord = self.core.coordinator
