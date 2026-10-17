@@ -16,7 +16,9 @@ function Find-Uv {
 $uv = Find-Uv
 if (-not $uv) {
     Write-Host "Installing uv (Python manager, from astral.sh)..."
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex"
+    # run the official installer in this process (a nested PowerShell can inherit broken module paths)
+    $env:UV_NO_MODIFY_PATH = $null
+    Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
     $uv = Find-Uv
     if (-not $uv) { throw "uv could not be installed. Install it from https://docs.astral.sh/uv/ and run this again." }
 }
