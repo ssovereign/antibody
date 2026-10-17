@@ -164,7 +164,9 @@ def test_install_merges_settings_and_refuses_repo(core, proj):
     assert data["permissions"] == {"allow": ["Bash(ls:*)"]}
     pre_groups = data["hooks"]["PreToolUse"]
     assert len(pre_groups) == 2 and pre_groups[0]["hooks"][0]["command"] == "mine.sh"
-    assert pre_groups[1]["matcher"] == "*" and pre_groups[1]["hooks"][0]["args"][-1] == str(proj.resolve())
+    hook_args = pre_groups[1]["hooks"][0]["args"]
+    assert pre_groups[1]["matcher"] == "*" and hook_args[hook_args.index("--dir") + 1] == str(proj.resolve())
+    assert hook_args[hook_args.index("--url") + 1].startswith("http://127.0.0.1:")
     assert set(data["hooks"]) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "SessionEnd"}
     tokens = json.loads(open(core.config.SECRETS_PATH, encoding="utf-8").read())["claude_code_hook_tokens"]
     assert core.projects.authenticate(tokens[PID])["project_id"] == PID

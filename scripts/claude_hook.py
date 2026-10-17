@@ -63,11 +63,12 @@ def main() -> None:
         emit(None)
         return
     ev["antibody_project_dir"] = (args[args.index("--dir") + 1] if "--dir" in args else None) or os.environ.get("CLAUDE_PROJECT_DIR")
+    url = (args[args.index("--url") + 1] if "--url" in args else None) or URL  # the ANTIBODY this folder was installed for
     tok = token(project)
     if not tok:
         unreachable(ev, "no hook token; run the installer again")
         return
-    req = urllib.request.Request(f"{URL}/v1/hooks/claude-code?project_id={project}", data=json.dumps(ev).encode("utf-8"), method="POST",
+    req = urllib.request.Request(f"{os.environ.get('ANTIBODY_URL') or url}/v1/hooks/claude-code?project_id={project}", data=json.dumps(ev).encode("utf-8"), method="POST",
                                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {tok}"})
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # local service: never via a proxy

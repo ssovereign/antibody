@@ -724,7 +724,8 @@ class ClaudeCodeGuard:
         agent = self.agent_for_dir(project_id, str(pdir))
         token = self._hook_token(project_id)
         hook_script = str(Path(repo_root) / "scripts" / "claude_hook.py")
-        cmd = {"type": "command", "command": python, "args": [hook_script, "--project", project_id, "--dir", str(pdir)], "timeout": 30}
+        cmd = {"type": "command", "command": python, "args": [hook_script, "--project", project_id, "--dir", str(pdir),
+                                                        "--url", f"http://127.0.0.1:{self.core.config.API_PORT}"], "timeout": 30}
         long_cmd = dict(cmd, timeout=1800)  # ab: merge runs agents and can take minutes
         settings_path = pdir / ".claude" / "settings.local.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
