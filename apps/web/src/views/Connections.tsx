@@ -23,6 +23,7 @@ export function ConnectClaude() {
         {x.source === "saved in ANTIBODY settings" ? <button onClick={() => run("clr", () => api(`/v1/integrations/claude/key`, { method: "DELETE" }).then(s.reload), "Key removed")}>Remove key</button> : null}
       </div>
       <p className="small muted">Get a key from console.anthropic.com → API keys. Setting <code>ANTHROPIC_API_KEY</code> before <code>make dev</code> also works.</p>
+      <WorkspaceField value={x.settings.workspace_id || ""} onSave={(v: string) => set({ workspace_id: v })} />
       <div className="row" style={{ marginTop: 6 }}>
         <label className="field">Model
           <select id="claude-model" value={x.settings.model} onChange={(e) => set({ model: e.target.value })}>
@@ -52,6 +53,18 @@ export function ConnectClaude() {
           : <span className="small"><Badge kind="bad">failed</Badge> {x.last_test.error} · {when(x.last_test.at)}</span>) : null}
       </div>
       <p className="small muted">Runs that use Claude are labeled <b>live</b>. Refusal fallbacks let the API retry a declined request on another model automatically.</p>
+    </div>
+  );
+}
+
+function WorkspaceField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [v, setV] = useState(value);
+  return (
+    <div className="row" style={{ marginTop: 4 }}>
+      <label className="field" style={{ flex: "1 1 260px" }}>Workspace ID (only for organization-level keys)
+        <input id="claude-workspace" value={v} onChange={(e) => setV(e.target.value)} placeholder="wrkspc_…" />
+      </label>
+      <button style={{ marginTop: 18 }} onClick={() => onSave(v.trim())} disabled={v.trim() === value}>Save workspace</button>
     </div>
   );
 }

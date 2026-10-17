@@ -13,6 +13,7 @@ fallbacks ("default" routing) enabled.
 from __future__ import annotations
 
 import json
+import re
 import os
 import threading
 from pathlib import Path
@@ -25,6 +26,7 @@ DEFAULTS = {
     "base_url": "https://api.anthropic.com",
     "fallbacks": True,
     "auditor": "rules",  # rules | claude
+    "workspace_id": "",  # for organization-level keys not scoped to a workspace (sent as anthropic-workspace-id)
 }
 MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"]
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
@@ -59,7 +61,7 @@ class ClaudeConnection:
         return s
 
     def update_settings(self, changes: dict) -> dict:
-        allowed = {"model", "effort", "base_url", "fallbacks", "auditor"}
+        allowed = {"model", "effort", "base_url", "fallbacks", "auditor", "workspace_id"}
         bad = set(changes) - allowed
         if bad:
             raise ValueError(f"not editable: {sorted(bad)}")
@@ -69,6 +71,10 @@ class ClaudeConnection:
             raise ValueError(f"effort must be one of {EFFORTS}")
         if "base_url" in changes and not str(changes["base_url"]).startswith(("https://", "http://127.0.0.1", "http://localhost")):
             raise ValueError("base_url must be https (or a loopback address for a local gateway)")
+        if "workspace_id" in changes:
+            changes["workspace_id"] = str(changes["workspace_id"] or "").strip()
+            if changes["workspace_id"] and not re.fullmatch(r"wrkspc_[A-Za-z0-9]+", changes["workspace_id"]):
+                raise ValueError("workspace ID looks like wrkspc_… (Console → Settings → Workspaces)")
         if "auditor" in changes and changes["auditor"] not in ("rules", "claude"):
             raise ValueError("auditor must be rules or claude")
         with self._lock:
@@ -124,7 +130,10 @@ class ClaudeConnection:
         key, token, source = self._credential()
         if not source and self.http_client is None:
             raise ClaudeNotConnected("Claude is not connected. Add an Anthropic API key in Settings → Connect Claude.")
-        kw = {"base_url": self.settings()["base_url"], "max_retries": 2, "timeout": 600.0}
+        st = self.settings()
+        kw = {"base_url": st["base_url"], "max_retries": 2, "timeout": 600.0}
+        if st.get("workspace_id"):
+            kw["default_headers"] = {"anthropic-workspace-id": st["workspace_id"]}
         if key:
             kw["api_key"] = key
         elif token:
@@ -166,7 +175,11 @@ class ClaudeConnection:
         except anthropic.RateLimitError:
             res = {"ok": False, "error": "Rate limited. Try again shortly.", "at": utcnow()}
         except anthropic.APIStatusError as e:
-            res = {"ok": False, "error": f"API error {e.status_code}: {str(e.message)[:200]}", "at": utcnow()}
+            msg = str(e.message)
+            if "workspace" in msg.lower() and "scoped" in msg.lower():
+                msg = ("This key belongs to the organization, not a workspace. Either create a key inside a workspace "
+                       "(Console → Workspaces → Default → API keys), or enter the workspace ID (wrkspc_…) below.")
+            res = {"ok": False, "error": f"API error {e.status_code}: {msg[:300]}", "at": utcnow()}
         except anthropic.APIConnectionError:
             res = {"ok": False, "error": "Could not reach the API. Check the network and base URL.", "at": utcnow()}
         with self._lock:
