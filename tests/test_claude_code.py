@@ -67,10 +67,19 @@ def test_session_becomes_run_and_writes_are_checked(core, proj):
     assert decision(r) == "deny" and "outside this project folder" in r["stdout"]
     r = pre(core, proj, "Edit", {"file_path": str(proj / ".claude" / "settings.local.json"), "old_string": "a", "new_string": "b"}, tid="t3")
     assert decision(r) == "deny" and "guard configuration" in r["stdout"]
+    # Claude Code's own memory folder for this project counts as part of the project
+    from server import cc_state
+    mem = cc_state.projects_root() / cc_state.encode_dir(os.path.realpath(proj)) / "memory" / "notes.md"
+    assert decision(pre(core, proj, "Write", {"file_path": str(mem), "content": "code word"}, tid="t2b")) == "allow"
     # reading outside the project asks you
     assert decision(pre(core, proj, "Read", {"file_path": str(proj.parent / "x.txt")}, tid="t4")) == "ask"
     assert decision(pre(core, proj, "Read", {"file_path": str(proj / "README.md")}, tid="t5")) == "allow"
     # a DENY never pauses the session; it keeps going for independent work
+    assert core.coordinator.run(run["run_id"])["status"] == "running"
+    # the session ends, then `claude --resume` reopens it: tools work again
+    core.claude_code.handle(PID, ev(proj, "SessionEnd"))
+    assert core.coordinator.run(run["run_id"])["status"] == "completed"
+    assert decision(pre(core, proj, "Read", {"file_path": str(proj / "README.md")}, tid="t6")) == "allow"
     assert core.coordinator.run(run["run_id"])["status"] == "running"
     assert core.db.scalar("SELECT COUNT(*) FROM decisions WHERE run_id=? AND outcome='DENY'", (run["run_id"],)) == 2
 

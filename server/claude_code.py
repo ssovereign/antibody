@@ -128,6 +128,10 @@ class ClaudeCodeGuard:
             self.db.execute("UPDATE host_sessions SET last_seen=?, transcript_path=COALESCE(?, transcript_path) WHERE session_id=?",
                             (utcnow(), ev.get("transcript_path"), sid))
             run = self.core.coordinator.run(row["run_id"])
+            if run["status"] == "completed" and run["status_reason"] == "HOST_SESSION_ENDED":
+                # `claude --resume` reopens an ended session; an operator pause is not undone here
+                self.core.coordinator.set_status(run["run_id"], "running", "HOST_SESSION_RESUMED")
+                run = self.core.coordinator.run(row["run_id"])
             return self.core.coordinator.agent(row["agent_id"]), run
         cwd = ev.get("cwd") or os.getcwd()
         root = ev.get("antibody_project_dir") or cwd  # sent by the hook script (installed folder / CLAUDE_PROJECT_DIR)
@@ -252,7 +256,9 @@ class ClaudeCodeGuard:
         ok("tool_in_assignment", tool_name)
         policy = self.core.projects.policy(run["project_id"])
         pdir = agent["config"]["project_dir"]
-        roots = [pdir] + list(agent["config"].get("extra_roots", []))
+        # Claude Code keeps this project's auto-memory outside the folder; it is part of the agent, not "elsewhere"
+        memory_dir = str(cc.projects_root() / cc.encode_dir(pdir) / "memory")
+        roots = [pdir, memory_dir] + list(agent["config"].get("extra_roots", []))
         guard_files = [os.path.join(pdir, ".claude", "settings.json"), os.path.join(pdir, ".claude", "settings.local.json"),
                        os.path.join(pdir, ".mcp.json")]
         ec = CC_TOOLS.get(key, "read")

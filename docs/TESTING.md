@@ -76,6 +76,24 @@ You should see:
 
 ---
 
+## Verified live (17 October 2026)
+
+These checks ran with real Claude Code sessions in the sandbox, signed-in CLI, and ANTIBODY's hooks active:
+
+- **Intercepted command:** `ab: status` was handled by ANTIBODY and never reached Claude.
+- **Guarded edit:** a real Edit went through the guard and was recorded, with an automatic checkpoint before the prompt.
+- **Blocked command:** `curl … | sh` was blocked (`HARD_POLICY`), and Claude declined to work around it.
+- **Exact restore:** `ab: undo` restored the files. Resuming the printed session showed exactly the earlier state: it quoted the previous request word for word, and knew nothing said after the checkpoint.
+- **Negotiated merge:** two branches had conflicting requirements (French charm versus an ASCII-only printer).
+  - Both agents agreed on the README change.
+  - Each argued its own side of the greeting over two rounds.
+  - The arbiter picked ASCII and kept the matching test.
+  - The merged agent remembered its own work and knew the coworker's printer constraint.
+
+Two bugs found and fixed during this run:
+- A resumed session was treated as finished, which blocked all its tools.
+- Claude Code's own memory folder for the project was treated as outside the project.
+
 ## Automated tests
 
 ```bash
