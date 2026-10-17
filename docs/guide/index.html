@@ -1,0 +1,492 @@
+<title>ANTIBODY Field Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a field manual. Fixed contents rail on wide screens, one reading column, each screen of the app gets its own stop. */
+:root {
+  --bg: #f3f5f7;
+  --paper: #ffffff;
+  --ink: #1b2430;
+  --ink-2: #4a5666;
+  --ink-3: #5c6775;
+  --line: #dde2e8;
+  --accent: #2f5d8a;
+  --accent-soft: #e4edf6;
+  --ok: #2e6b47; --ok-soft: #e2efe6;
+  --warn: #8a5a12; --warn-soft: #f7ebd3;
+  --bad: #a3322c; --bad-soft: #f6e0dd;
+  --violet: #5c4a8a; --violet-soft: #ebe6f5;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 6px 20px rgba(27,36,48,.06);
+  --sans: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14181d; --paper: #1b2027; --ink: #e7eaee; --ink-2: #b7bfc9; --ink-3: #8a94a1; --line: #2c333c;
+    --accent: #86b3df; --accent-soft: #1e3045; --ok: #7cc39a; --ok-soft: #1c3226; --warn: #e2b462; --warn-soft: #3a2f1b;
+    --bad: #ef8a80; --bad-soft: #3d2220; --violet: #b7a6e6; --violet-soft: #2c2640; --shadow: none; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14181d; --paper: #1b2027; --ink: #e7eaee; --ink-2: #b7bfc9; --ink-3: #8a94a1; --line: #2c333c;
+  --accent: #86b3df; --accent-soft: #1e3045; --ok: #7cc39a; --ok-soft: #1c3226; --warn: #e2b462; --warn-soft: #3a2f1b;
+  --bad: #ef8a80; --bad-soft: #3d2220; --violet: #b7a6e6; --violet-soft: #2c2640; --shadow: none; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.65 var(--sans); }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; }
+
+.wrap { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 48px; max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 80px; }
+@media (max-width: 920px) { .wrap { grid-template-columns: 1fr; gap: 24px; padding-block: 24px 60px; } }
+
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 14px; }
+nav.toc .brand { font-weight: 800; letter-spacing: .14em; font-size: 15px; display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.toc .grp { margin: 14px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); font-weight: 600; }
+nav.toc a { display: block; padding: 4px 10px; border-radius: 6px; color: var(--ink-2); text-decoration: none; }
+nav.toc a:hover { background: var(--accent-soft); color: var(--accent); }
+@media (max-width: 920px) { nav.toc { position: static; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  nav.toc ol { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
+
+main { min-width: 0; max-width: 760px; }
+header.hero { margin-bottom: 40px; }
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); font-weight: 700; margin: 0 0 8px; }
+h1 { font-size: clamp(32px, 5vw, 46px); line-height: 1.08; margin: 0 0 16px; font-weight: 800; letter-spacing: -.02em; text-wrap: balance; }
+h2 { font-size: 27px; line-height: 1.2; margin: 0 0 12px; font-weight: 800; letter-spacing: -.01em; text-wrap: balance; }
+h3 { font-size: 16px; margin: 22px 0 6px; font-weight: 700; }
+p { margin: 0 0 12px; max-width: 68ch; }
+.lede { font-size: 19px; color: var(--ink-2); max-width: 60ch; }
+
+section.stop { padding-top: 34px; margin-top: 30px; border-top: 1px solid var(--line); scroll-margin-top: 16px; }
+.path { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); margin-bottom: 14px; }
+.path b { color: var(--ink-2); font-weight: 500; }
+
+figure { margin: 18px 0 18px; }
+figure img { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: var(--shadow); background: #fff; }
+figcaption { font-size: 13.5px; color: var(--ink-3); margin-top: 8px; }
+
+.panel { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 14px 0; }
+.panel h3:first-child { margin-top: 0; }
+ul.look, ol.do { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+ul.look li::marker { color: var(--accent); }
+ol.do li::marker { color: var(--accent); font-weight: 700; }
+.try { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; font-size: 15px; }
+.try b { color: var(--accent); }
+
+.badge { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; line-height: 1.7; vertical-align: 1px; }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ok { background: var(--ok-soft); color: var(--ok); }
+.warn { background: var(--warn-soft); color: var(--warn); }
+.bad { background: var(--bad-soft); color: var(--bad); }
+.info { background: var(--accent-soft); color: var(--accent); }
+.vio { background: var(--violet-soft); color: var(--violet); }
+
+dl.terms { display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px; margin: 0; }
+dl.terms dt { font-weight: 700; }
+dl.terms dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 560px) { dl.terms { grid-template-columns: 1fr; gap: 2px 0; } dl.terms dd { margin-bottom: 10px; } }
+
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0; font-size: 14px; }
+.flow span.n { background: var(--paper); border: 1px solid var(--line); padding: 5px 10px; border-radius: 8px; font-weight: 600; }
+.flow span.arrow { color: var(--ink-3); }
+.cmd { font-family: var(--mono); font-size: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; overflow-x: auto; white-space: pre; margin: 8px 0; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.story { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.story li { counter-increment: s; position: relative; padding-left: 38px; }
+.story li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--paper); font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+footer { margin-top: 50px; font-size: 13.5px; color: var(--ink-3); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v10M16 13l-8 8M16 13l8 8M8 21l-4 4M24 21l4 4" stroke="var(--accent)" stroke-width="3" fill="none" stroke-linecap="round"/></svg>
+      ANTIBODY
+    </div>
+    <ol>
+      <li><a href="#idea">The idea</a></li>
+      <li><a href="#words">Words you'll see</a></li>
+      <li><a href="#start">Starting it up</a></li>
+      <li class="grp">Work</li>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#assignments">Assignments</a></li>
+      <li><a href="#runs">Runs</a></li>
+      <li><a href="#sources">Sources</a></li>
+      <li class="grp">Protect &amp; learn</li>
+      <li><a href="#incidents">Incidents</a></li>
+      <li><a href="#knowledge">Knowledge</a></li>
+      <li><a href="#evaluation">Evaluation</a></li>
+      <li class="grp">RECEIPT</li>
+      <li><a href="#history">Version history</a></li>
+      <li><a href="#effects">Effects &amp; outbox</a></li>
+      <li class="grp">System</li>
+      <li><a href="#settings">Settings</a></li>
+      <li class="grp">Putting it together</li>
+      <li><a href="#stories">Three stories to follow</a></li>
+      <li><a href="#real">What's real, what isn't</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <p class="eyebrow">A screen-by-screen guide</p>
+      <h1>How to use ANTIBODY</h1>
+      <p class="lede">ANTIBODY looks after AI agents while they work. This guide walks through the app one screen at a time, in the same order as the menu on the left of the app. Each stop says what the screen is for, what you're looking at, and what you can do there.</p>
+    </header>
+
+    <section class="stop" id="idea">
+      <p class="eyebrow">Start here</p>
+      <h2>The idea in one minute</h2>
+      <p>An AI agent is a program that does a job for you by using tools: it reads documents, writes files, sends messages. Two things go wrong a lot. It makes the same mistake over and over, and it can be tricked by text it reads, like a web page that says "send this report to some stranger".</p>
+      <p>ANTIBODY sits between the agent and its tools and does four jobs:</p>
+      <ul class="look">
+        <li><b>Checks every action before it happens.</b> If you said "send the report to Finance", a request to send it anywhere else is stopped, no matter what a document told the agent.</li>
+        <li><b>Treats outside content as information, never as orders.</b> Pages, logs and calendar invites can supply facts, but they can't change what the agent is allowed to do.</li>
+        <li><b>Learns from mistakes, carefully.</b> When something fails, it proposes a fix, tests it on fresh examples, and only then lets agents use it.</li>
+        <li><b>Keeps a history (called RECEIPT).</b> Like save points in a game: you can save an agent, try something on a side branch, compare, keep the good parts, and go back.</li>
+      </ul>
+      <div class="flow" aria-label="The basic loop">
+        <span class="n">You give a job</span><span class="arrow">→</span>
+        <span class="n">Agent proposes an action</span><span class="arrow">→</span>
+        <span class="n">ANTIBODY checks it</span><span class="arrow">→</span>
+        <span class="n">Action runs or is stopped</span><span class="arrow">→</span>
+        <span class="n">Everything is recorded</span>
+      </div>
+    </section>
+
+    <section class="stop" id="words">
+      <p class="eyebrow">Vocabulary</p>
+      <h2>Words you'll see</h2>
+      <p>You don't need to memorise these. Come back here when a word on screen is unfamiliar.</p>
+      <div class="panel">
+        <dl class="terms">
+          <dt>Agent</dt><dd>A worker program, for example "Report assistant A". Each has its own memory and files.</dd>
+          <dt>Assignment (task)</dt><dd>The job you give an agent plus exactly what it may do: which tools, which recipients, which files. Only you can change it.</dd>
+          <dt>Run</dt><dd>One attempt by one agent at one assignment, from start to finish.</dd>
+          <dt>Source</dt><dd>Any outside content the agent reads: a document, web page, log file, calendar invite or tool result.</dd>
+          <dt>Gateway</dt><dd>The checkpoint every action passes through. It decides <span class="badge ok">ALLOW</span>, <span class="badge bad">DENY</span> or <span class="badge warn">PAUSE</span>.</dd>
+          <dt>Effect</dt><dd>Something that actually happened outside the agent, like a sent message. Effects are never "undone" by restoring the agent.</dd>
+          <dt>Health</dt><dd>A plain status for a run: Healthy, Degraded, Paused, Quarantined, Recovering or Unknown, always with a reason.</dd>
+          <dt>Incident</dt><dd>A problem worth looking at: a blocked action, repeated failures, or an action whose outcome is unclear.</dd>
+          <dt>Candidate</dt><dd>A proposed fix that hasn't been proven yet.</dd>
+          <dt>Lesson / pattern</dt><dd>A fix (lesson) or an attack fingerprint (pattern) that passed testing and was accepted. Other agents can use it.</dd>
+          <dt>Quarantine</dt><dd>Hiding a suspicious sentence from the agent so it never reads it. The rest of the document stays visible.</dd>
+          <dt>Version / branch</dt><dd>A saved snapshot of an agent, and a separate line of snapshots where you can experiment safely.</dd>
+          <dt>Mode label</dt><dd>Every run says <span class="badge info">simulated</span>, <span class="badge vio">recorded</span> or <span class="badge ok">live</span>, so you always know whether a real AI model was involved.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="stop" id="start">
+      <p class="eyebrow">Setup</p>
+      <h2>Starting it up</h2>
+      <p>Open a terminal in the project folder and run these one at a time. The first installs everything, the second fills the app with example data, the third starts it.</p>
+      <div class="cmd">make setup</div>
+      <div class="cmd">make demo</div>
+      <div class="cmd">make dev</div>
+      <p>Then open <code>http://127.0.0.1:8765</code> in your browser. It only listens on your own computer. If you don't have <code>make</code>, the README lists the equivalent commands.</p>
+      <p>The example data is made up: a pretend company, pretend email addresses ending in <code>.example</code>, and a pretend outbox that stands in for real email. Nothing leaves your machine.</p>
+    </section>
+
+    <!-- ===================================================== WORK -->
+    <section class="stop" id="overview">
+      <p class="eyebrow">Work</p>
+      <h2>Overview</h2>
+      <p class="path">Menu → <b>Overview</b></p>
+      <p>The home screen. It answers "is anything wrong, and what happened so far?"</p>
+      <figure><img src="img/overview.jpg" alt="Overview screen with counters, agents table and a Needs attention list" loading="lazy" width="800" height="512"><figcaption>The Overview after running the demo.</figcaption></figure>
+      <div class="panel">
+        <h3>What you're looking at</h3>
+        <ul class="look">
+          <li><b>The counter tiles</b> come straight from the records: how many runs, how many actions were denied, and the one that matters most, <i>executor calls for denied actions</i>. That should always be 0: a denied action never ran.</li>
+          <li><b>Agents</b> lists each agent, its latest run and its health. The orange "simulated susceptible model" tag means that agent is deliberately gullible so the protections have something to catch.</li>
+          <li><b>Needs attention</b> lists open incidents. Click <i>Inspect incident</i> to jump to the details.</li>
+          <li><b>What is real here</b> is a short reminder of which parts are genuine and which are stand-ins.</li>
+        </ul>
+      </div>
+      <div class="try"><b>Try it:</b> click any run ID in the Agents table to open that run's timeline.</div>
+    </section>
+
+    <section class="stop" id="assignments">
+      <p class="eyebrow">Work</p>
+      <h2>Assignments</h2>
+      <p class="path">Menu → <b>Assignments</b></p>
+      <p>Where you say what a job is and what the agent may touch. This is the agent's permission slip. Nothing the agent reads can change it; only you can.</p>
+      <figure><img src="img/assignments.jpg" alt="Assignment editor with goal, tool checkboxes, recipients and resources" loading="lazy" width="800" height="512"><figcaption>Editing the "vendor report" assignment. Only Finance is ticked as a recipient.</figcaption></figure>
+      <div class="panel">
+        <h3>What you're looking at</h3>
+        <ul class="look">
+          <li><b>Goal</b>: the job in plain words.</li>
+          <li><b>Tools</b>: what the agent may do. The grey word beside each tool says how risky it is, for example <i>read</i>, <i>write_local</i>, <i>external_send</i> or <i>payment</i>.</li>
+          <li><b>Recipients</b>: who the agent may send to. These come from a fixed list on the server, so a document can't add a new person.</li>
+          <li><b>Resources</b>: which documents the agent should read, and where to save its output.</li>
+          <li><b>Required phrases</b>: optional words the finished report must contain. An independent checker uses these to decide whether the job really succeeded.</li>
+          <li><b>Network and spending</b>: web reading, a spending limit (zero by default) and a cap on how many steps a run may take.</li>
+        </ul>
+        <h3>Things you can do</h3>
+        <ol class="do">
+          <li>Click <b>Edit</b> on an assignment in the right-hand list.</li>
+          <li>Change something. The label switches to <span class="badge warn">permission change pending</span>.</li>
+          <li>Click <b>Save new revision</b>. Every change creates a new numbered revision, so old runs stay tied to the rules they ran under.</li>
+        </ol>
+      </div>
+      <p><b>Suggest a draft</b> proposes tools from your goal text. It's only a suggestion and never takes effect until you save it yourself.</p>
+    </section>
+
+    <section class="stop" id="runs">
+      <p class="eyebrow">Work</p>
+      <h2>Runs</h2>
+      <p class="path">Menu → <b>Runs</b> → click a run</p>
+      <p>A run is one attempt at a job. The run screen is a live diary of everything that happened, in order, with an inspector on the right that shows the evidence behind any entry you click.</p>
+      <figure><img src="img/run.jpg" alt="Run page with timeline on the left and an inspector showing a denied action" loading="lazy" width="800" height="512"><figcaption>The vendor-report run. The selected entry is the gateway denying a send to <code>audit-review@exfil.example</code>.</figcaption></figure>
+      <div class="panel">
+        <h3>What you're looking at</h3>
+        <ul class="look">
+          <li><b>The header</b> shows the status, the health, and a <span class="badge info">stream live</span> tag. If the connection drops, a yellow banner says so and the timeline stops moving. It never pretends the agent is still working.</li>
+          <li><b>The timeline</b>, one line per event: the agent reading a source, proposing an action, the gateway's decision, the result, health changes.</li>
+          <li><b>The inspector</b> explains the selected entry. For a denied action you'll see the reason, the checks it went through, the exact arguments, and the source text that contained the suspicious address (highlighted).</li>
+        </ul>
+        <h3>Buttons at the top</h3>
+        <ul class="look">
+          <li><b>Pause</b> stops new actions from running.</li>
+          <li><b>Resume</b> carries on a paused run.</li>
+          <li><b>Continue as new run</b> starts a fresh run that keeps the useful progress, under today's rules.</li>
+        </ul>
+        <p style="margin-top:10px">A button that can't be used right now is greyed out and says why, for example "Only paused runs resume".</p>
+      </div>
+      <figure><img src="img/run-timeline.jpg" alt="Timeline showing deny, incident opened, health changes and quarantine" loading="lazy" width="800" height="512"><figcaption>What happens right after the block: an incident opens, the suspicious sentence is quarantined, health goes Paused → Quarantined → Recovering → Healthy, and the run finishes the real job.</figcaption></figure>
+      <div class="try"><b>Try it:</b> on the Runs list, pick an agent and an assignment, then press <b>Start</b>. The context budget box limits how much the agent may "remember" at once. A smaller budget leaves out older material, but never the permissions.</div>
+    </section>
+
+    <section class="stop" id="sources">
+      <p class="eyebrow">Work</p>
+      <h2>Sources</h2>
+      <p class="path">Menu → <b>Sources</b> → click a source</p>
+      <p>Everything the agent can read comes in through here: uploaded files or web pages. ANTIBODY cleans each one up first and shows you exactly what the agent will see.</p>
+      <figure><img src="img/sources.jpg" alt="Source detail showing a struck-through quarantined sentence and a hidden span excluded at parse time" loading="lazy" width="800" height="512"><figcaption>The poisoned vendor page. The red struck-through sentence was quarantined; below it, a hidden instruction that was removed before the agent ever saw it.</figcaption></figure>
+      <div class="panel">
+        <h3>What you're looking at</h3>
+        <ul class="look">
+          <li><b>Agent-visible view</b>: the cleaned text. Scripts are removed, links are never opened, and everything is shown as plain text.</li>
+          <li><b>Red struck-through text</b> is quarantined. The agent doesn't get that sentence, but it still gets the rest of the page.</li>
+          <li><b>Excluded at parse time</b> lists hidden tricks found inside the file, such as text styled to be invisible or comments aimed at the AI. They're kept as evidence but never shown to the agent.</li>
+          <li><b>Origin</b> says where the content came from. Outside content is always labelled <code>EXTERNAL_DATA</code>, which means "information, not instructions".</li>
+        </ul>
+        <h3>Things you can do</h3>
+        <ol class="do">
+          <li>Choose a file at the top to import it. Text, Markdown, web pages, log files and calendar invites (<code>.ics</code>) work.</li>
+          <li>Or paste a web address beginning with <code>https://</code> and press <b>Fetch</b>. Private and internal addresses are refused.</li>
+          <li>Then tick the new source under <b>Resources</b> in an assignment.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ===================================================== PROTECT & LEARN -->
+    <section class="stop" id="incidents">
+      <p class="eyebrow">Protect &amp; learn</p>
+      <h2>Incidents</h2>
+      <p class="path">Menu → <b>Incidents</b> → click an incident</p>
+      <p>The "what went wrong" page. Every incident separates what is known for sure from what is only suspected, and offers a next step.</p>
+      <figure><img src="img/incident-blocked.jpg" alt="Incident detail with observed facts, hypotheses and the decision" loading="lazy" width="800" height="512"><figcaption>A blocked send. Facts on top, suspicions below, each one labelled.</figcaption></figure>
+      <div class="panel">
+        <h3>How to read it</h3>
+        <ul class="look">
+          <li><b>Observed facts</b> (grey bar) were recorded directly. Here: the action was denied, and the record shows the sending tool ran 0 times.</li>
+          <li><b>Hypotheses</b> (amber bar) are explanations, labelled by how strong the evidence is:
+            <span class="badge warn">hypothesized</span> means a reasonable guess,
+            <span class="badge vio">intervention supported</span> means a controlled test backed it up.</li>
+          <li><b>Linked sources</b> shows the text the suspicious address came from.</li>
+        </ul>
+        <h3>Things you can do</h3>
+        <ol class="do">
+          <li><b>Run controlled attribution</b> (blocked actions only). ANTIBODY reruns the same job in a sealed sandbox twice: once with the original text, once with the suspicious sentence blanked out. If the bad request only appears when the sentence is there, the suspicion is upgraded to "intervention supported".</li>
+          <li><b>Test repair on fixed suite</b> runs the proposed fix (the candidate) against a fixed set of test cases.</li>
+          <li><b>Accept revision</b> becomes clickable only after the tests pass. Accepting adds a new saved version of the agent.</li>
+        </ol>
+      </div>
+      <figure><img src="img/incident-failure.jpg" alt="Execution failure incident with failure events, repair branch banner and an accepted candidate" loading="lazy" width="800" height="512"><figcaption>A different kind of incident: the export tool failed twice on special characters (→, ✓). ANTIBODY tried a repair on a separate branch, which passed, and the proposed fix ("use UTF-8 for this tool") was later tested and accepted.</figcaption></figure>
+      <p>Note the line <i>"Recovery is not acceptance."</i> A repair that worked once doesn't automatically become a rule. It still has to pass the fixed tests on fresh examples.</p>
+    </section>
+
+    <section class="stop" id="knowledge">
+      <p class="eyebrow">Protect &amp; learn</p>
+      <h2>Knowledge</h2>
+      <p class="path">Menu → <b>Knowledge</b></p>
+      <p>The shared library of what agents have learned: fixes (lessons) and attack fingerprints (patterns). Every agent in the project draws from it, but only when a lesson fits their situation.</p>
+      <figure><img src="img/knowledge.jpg" alt="Knowledge screen with the accepted lessons table and details of the encoding lesson" loading="lazy" width="800" height="512"><figcaption>The UTF-8 lesson: where it applies, why it exists, its test results, and every run that loaded it.</figcaption></figure>
+      <div class="panel">
+        <h3>What you're looking at</h3>
+        <ul class="look">
+          <li><b>Status</b>: <span class="badge ok">accepted</span> is in use, <span class="badge bad">revoked</span> has been withdrawn everywhere. "superseded" means a newer revision replaced it.</li>
+          <li><b>Applies when</b> lists the conditions that must be true before the lesson is used. A fix for one tool doesn't leak into unrelated jobs.</li>
+          <li><b>Why it exists</b> links back to the incident that started it. <b>Tests</b> links to its evaluation.</li>
+          <li><b>Loaded by</b> shows exactly which runs used it, and which version of the library they had.</li>
+        </ul>
+        <h3>Tabs</h3>
+        <ul class="look">
+          <li><b>Lessons &amp; patterns</b> holds accepted knowledge.</li>
+          <li><b>Candidates</b> holds proposals in every state, including rejected ones. They're kept so the same bad idea isn't proposed twice.</li>
+          <li><b>Registry</b> is the numbered history of the library and which runs acknowledged each revision.</li>
+        </ul>
+        <h3>Removing something</h3>
+        <p style="margin:0">Type a reason and press <b>Revoke this revision</b>. From then on, no agent will use it, even if you restore an old snapshot that included it. To remove a lesson from just one experiment, use <a href="#history">Version history</a> instead.</p>
+      </div>
+    </section>
+
+    <section class="stop" id="evaluation">
+      <p class="eyebrow">Protect &amp; learn</p>
+      <h2>Evaluation</h2>
+      <p class="path">Menu → <b>Evaluation</b> → click an evaluation</p>
+      <p>The exam room. Before any fix is trusted, it's run against a fixed set of test cases that the learning system can't edit. This screen shows those results.</p>
+      <figure><img src="img/evaluation.jpg" alt="Evaluation list and a detail panel with case results" loading="lazy" width="800" height="512"><figcaption>The UTF-8 fix passed. Two fresh cases improved ("report false → true") and two protected cases stayed fine.</figcaption></figure>
+      <div class="panel">
+        <h3>How to read a result</h3>
+        <ul class="look">
+          <li><b>target</b> cases are new examples the fix should help with. Each shows before → after.</li>
+          <li><b>counterexample</b> cases are examples the fix must <i>not</i> change. If a fix breaks one of these, it's rejected. The demo includes a deliberately bad "always UTF-16" fix that fails here.</li>
+          <li><b>Checker</b> is a fingerprint of the grading code. If someone changed the grader, evaluation refuses to run.</li>
+          <li><b>Measured cost</b> lists steps and estimated tokens. Price shows as "not measured" because no paid AI model was used.</li>
+        </ul>
+      </div>
+      <p><b>Export results (JSON)</b> downloads the full record, including failing cases.</p>
+    </section>
+
+    <!-- ===================================================== RECEIPT -->
+    <section class="stop" id="history">
+      <p class="eyebrow">RECEIPT</p>
+      <h2>Version history</h2>
+      <p class="path">Menu → <b>Version history</b> → choose an agent at the top right</p>
+      <p>Save points for an agent. A version captures its instructions, memories, accepted lessons and files. Branches let you try something without touching the main line.</p>
+      <figure><img src="img/history.jpg" alt="Version graph with main and experiment branches, a comparison and the restore preview" loading="lazy" width="800" height="512"><figcaption>Agent A's history. The lower line is an experiment branch that merged back into main. Comparing two experiment versions shows a bad memory being removed.</figcaption></figure>
+      <div class="panel">
+        <h3>The graph</h3>
+        <ul class="look">
+          <li>Each dot is a saved version and each row is a branch. Blue is the accepted head (the current "official" state).</li>
+          <li>Click one dot (it becomes <b>A</b>), then another (<b>B</b>) to compare them.</li>
+        </ul>
+        <h3>Comparing</h3>
+        <ul class="look">
+          <li><b>Summary</b> gives a plain-language list such as "Removed memory fact 'preferred_report_encoding' (seeded test condition)". Each line names the exact record it refers to.</li>
+          <li><b>Lessons, Memory and Files</b> show the details, including a line-by-line file diff.</li>
+          <li><b>Keep selected changes</b> lets you tick just the changes you want and merge them into another branch. ANTIBODY tests the combined result before accepting it. If both sides changed the same thing, it asks you to choose.</li>
+        </ul>
+        <h3>Restoring</h3>
+        <ul class="look">
+          <li>The right panel shows a <b>Restore preview</b>: rule changes since then, knowledge that will be left out (anything revoked), and any unresolved actions.</li>
+          <li><b>Restore A into new branch</b> brings the old state back on a fresh branch. The original history is kept.</li>
+          <li><b>Branch from A</b> starts a side branch to experiment on.</li>
+        </ul>
+        <h3>Branch working state (lower right)</h3>
+        <p style="margin:0">Pick a branch to save it, remove a lesson from just that branch, or add and remove memory facts. Ticking "seeded test condition" marks a fact as a deliberate test.</p>
+      </div>
+      <p>One thing restoring will <b>not</b> do: undo things that already happened in the outside world. A sent message stays sent. That's what the next screen is for.</p>
+    </section>
+
+    <section class="stop" id="effects">
+      <p class="eyebrow">RECEIPT</p>
+      <h2>Effects &amp; outbox</h2>
+      <p class="path">Menu → <b>Effects &amp; outbox</b></p>
+      <p>The permanent record of what actually happened outside the agent. It's never rewound, so resuming an agent can't accidentally send the same message twice.</p>
+      <figure><img src="img/effects.jpg" alt="Effects filtered to UNKNOWN with a Reconcile button, and the local outbox below" loading="lazy" width="800" height="512"><figcaption>One send timed out, so nobody knows whether it went through. Its state is <span class="badge warn">UNKNOWN</span> until you reconcile it.</figcaption></figure>
+      <div class="panel">
+        <h3>What you're looking at</h3>
+        <ul class="look">
+          <li>Every action's outcome: <span class="badge ok">COMPLETED</span>, <span class="badge bad">FAILED</span>, <span class="badge bad">DENIED</span> (never ran) or <span class="badge warn">UNKNOWN</span> (might have happened).</li>
+          <li><b>Local outbox</b> is the pretend mailbox standing in for real email. Every "sent" message lands here, so you can count them.</li>
+        </ul>
+        <h3>Handling an UNKNOWN</h3>
+        <ol class="do">
+          <li>Use the dropdown to show only <b>UNKNOWN</b>.</li>
+          <li>Press <b>Reconcile</b>. ANTIBODY checks the destination's own record (here, the outbox) and marks the action COMPLETED or FAILED.</li>
+          <li>Go back to the paused run and press <b>Resume</b>. Until you reconcile, the run refuses to continue, so it can't double-send.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ===================================================== SYSTEM -->
+    <section class="stop" id="settings">
+      <p class="eyebrow">System</p>
+      <h2>Settings &amp; capabilities</h2>
+      <p class="path">Menu → <b>Settings &amp; capabilities</b></p>
+      <p>The honest spec sheet: what each kind of agent connection can and can't do, which integrations are switched on, and the fixed rules.</p>
+      <figure><img src="img/settings.jpg" alt="Capability badges for two adapters, integration states and the read-only operator policy" loading="lazy" width="800" height="512"><figcaption>Green is supported, red isn't. The proxy can check tool calls but can't restore a whole agent.</figcaption></figure>
+      <div class="panel">
+        <h3>What you're looking at</h3>
+        <ul class="look">
+          <li><b>Adapter capability profiles.</b> <code>langgraph_reference</code> is the built-in agent with full protection and history. <code>mcp_proxy</code> plugs ANTIBODY in front of another agent's tools: it can check every tool call, but it can't see that agent's memory, so full restore is off. If that agent has other tools that bypass the proxy, those aren't protected, and the screen says so.</li>
+          <li><b>Integrations.</b> Calendar files work today. The live Google Calendar connection is built but shows <span class="badge warn">unconfigured</span> until you give it credentials. Shell access is disabled on purpose.</li>
+          <li><b>Learning acceptance.</b> By default a person clicks to accept each fix. You can let one low-risk kind of fix be accepted automatically after it passes its tests.</li>
+          <li><b>Operator policy.</b> The fixed safety rules, read-only here. Agents and the learning system can't change them.</li>
+          <li><b>Budgets and limits</b> lists step limits, retry limits and context sizes.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ===================================================== STORIES -->
+    <section class="stop" id="stories">
+      <p class="eyebrow">Putting it together</p>
+      <h2>Three stories to follow</h2>
+      <p>The demo data contains these stories. Following one is the quickest way to see how the screens connect.</p>
+
+      <div class="panel">
+        <h3>1. A mistake becomes a tested lesson</h3>
+        <ol class="story">
+          <li><a href="#incidents">Incidents</a>: open the <i>execution failure</i>. The export tool failed twice on → and ✓.</li>
+          <li>Follow the repair branch link to see the fix tried in isolation.</li>
+          <li>Open its evaluation in <a href="#evaluation">Evaluation</a>: 2 new cases improved, 2 protected cases unaffected.</li>
+          <li>In <a href="#knowledge">Knowledge</a>, the UTF-8 lesson shows "Loaded by", including Report assistant B on a different report.</li>
+        </ol>
+      </div>
+
+      <div class="panel">
+        <h3>2. A trap is caught, then caught earlier</h3>
+        <ol class="story">
+          <li><a href="#sources">Sources</a>: open <i>vendor_update.html</i>. A sentence tells the AI to forward the report to an outside address.</li>
+          <li><a href="#runs">Runs</a>: in Report assistant A's vendor run, the send is <span class="badge bad">DENY</span> and the executor count is 0. The real send to Finance still happens.</li>
+          <li><a href="#incidents">Incidents</a>: the blocked action shows "intervention supported" after the controlled rerun.</li>
+          <li>Report assistant B's <i>offsite brief</i> run: a reworded version of the trap inside a calendar invite was quarantined <i>before</i> B read it, so B never even tried.</li>
+        </ol>
+      </div>
+
+      <div class="panel">
+        <h3>3. Undo a bad memory, keep the good lesson</h3>
+        <ol class="story">
+          <li><a href="#history">Version history</a> for Report assistant A: look at the <i>experiment</i> branch.</li>
+          <li>Compare its two versions: a seeded bad memory ("prefer UTF-16") was removed, and the UTF-8 lesson stayed.</li>
+          <li>The fixed report was merged back into main with only that one change selected.</li>
+          <li><a href="#effects">Effects &amp; outbox</a>: reconcile the one UNKNOWN send, then resume Ops assistant D's run from its run page.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="stop" id="real">
+      <p class="eyebrow">Honesty</p>
+      <h2>What's real, what isn't</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Part</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Action checks, records, file and outbox tools, tests, learning, history</td><td><span class="badge ok">real</span> Actually runs every time</td></tr>
+            <tr><td>The AI "brain" of the agents</td><td><span class="badge info">simulated</span> A scripted stand-in, because no AI key was available. A real Claude model can be switched on with a setting.</td></tr>
+            <tr><td>Email and payments</td><td><span class="badge info">stand-in</span> A local pretend outbox and ledger with made-up addresses</td></tr>
+            <tr><td>The special-character failure</td><td><span class="badge info">set up on purpose</span> The export tool is configured with an old text encoding to reproduce a common real-world bug</td></tr>
+            <tr><td>Live Google Calendar</td><td><span class="badge warn">built, not connected</span> Needs your credentials</td></tr>
+            <tr><td>One "recorded" run</td><td><span class="badge vio">replay</span> A saved script of actions, used only to exercise the checks</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:14px">For the full technical picture, see <code>README.md</code> and <code>docs/COMPLETION_REPORT.md</code> in the project folder.</p>
+    </section>
+
+    <footer>ANTIBODY field guide · screenshots taken from the seeded demo project (synthetic data).</footer>
+  </main>
+</div>

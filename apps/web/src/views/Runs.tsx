@@ -257,7 +257,7 @@ function DecisionPanel({ id }: { id: string }) {
     <>
       <h3>Decision</h3>
       <div className="row"><Status value={x.outcome} /> <b>{x.reason_code}</b> <Status value={x.attribution_status} /></div>
-      <p>{x.outcome === "DENY" ? "Blocked before execution. " : ""}{x.message}</p>
+      <p>{x.outcome === "DENY" && !x.message.startsWith("Blocked before execution") ? "Blocked before execution. " : ""}{x.message}</p>
       <KV items={[["Tool", x.tool_id], ["Arguments hash", <span className="mono">{short(x.args_hash, 16)}</span>], ["Executor invocations", String(x.executor_invocations)],
                   ["Effect", x.effect ? `${x.effect.state} (${short(x.effect.operation_id)})` : "none reserved"], ["Task / policy", `rev ${x.task_revision} / ${x.policy_revision}`]]} />
       <h3>Checks in order</h3>

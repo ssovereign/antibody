@@ -68,7 +68,7 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 @media (max-width: 1180px) { .split { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } }
 
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; min-width: 0; overflow-x: auto; }
 .card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .card h3 { font-size: 13px; margin: 14px 0 6px; color: var(--ink-2); }
 .sticky { position: sticky; top: 0; }
@@ -123,7 +123,8 @@ tr.selected td { background: var(--accent-soft); }
 pre.plain { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; margin: 6px 0; }
 mark.q { background: var(--bad-soft); color: var(--bad); text-decoration: line-through; }
 mark.a { background: var(--warn-soft); color: var(--ink); }
-.banner { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; display: flex; gap: 10px; align-items: center; }
+.banner { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.banner.small { display: block; }
 .banner.warn { background: var(--warn-soft); color: var(--warn); }
 .banner.bad { background: var(--bad-soft); color: var(--bad); }
 .banner.info { background: var(--accent-soft); color: var(--accent); }
