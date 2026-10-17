@@ -220,6 +220,8 @@ class LearningService:
             if run_id:
                 agent_id = self.db.scalar("SELECT agent_id FROM runs WHERE run_id=?", (run_id,))
                 agent_branch = self.db.scalar("SELECT accepted_branch_id FROM agents WHERE agent_id=?", (agent_id,))
+                if self.db.scalar("SELECT adapter FROM agents WHERE agent_id=?", (agent_id,)) == "claude_code_hooks":
+                    agent_branch = None  # a Claude Code project's history is its prompt checkpoints; the lesson applies via the registry
         now = utcnow()
         with self.db.tx() as c:
             cur_reg = c.execute("SELECT registry_head FROM projects WHERE project_id=?", (project_id,)).fetchone()[0]

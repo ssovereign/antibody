@@ -152,3 +152,14 @@ def test_compound_inspection_is_allowed_but_a_hidden_repeat_is_not(core, cc):
     bash("python -m pytest -q", NO_PYTEST, sid="s2")
     assert bash('ls -d .venv venv 2>/dev/null; python -m pip show pytest 2>&1 | head -3; which python', sid="s3")[0] == "ran"
     assert bash('cd app && ls && python -m pytest -q 2>&1 | tail -3', sid="s3")[0] == "blocked"
+
+
+def test_accepting_a_lesson_adds_no_version_to_the_claude_code_history(core, cc):
+    hook, bash = cc
+    agent_id = core.db.scalar("SELECT agent_id FROM host_sessions LIMIT 1")
+    before = core.db.scalar("SELECT COUNT(*) FROM versions v JOIN branches b ON b.branch_id=v.branch_id WHERE b.agent_id=?", (agent_id,))
+    bash("python -m pytest -q", NO_PYTEST)
+    bash("python -m pytest -q", NO_PYTEST, sid="s2")
+    assert any(c["status"] == "Accepted" for c in core.learning.candidates(PID))
+    after = core.db.scalar("SELECT COUNT(*) FROM versions v JOIN branches b ON b.branch_id=v.branch_id WHERE b.agent_id=?", (agent_id,))
+    assert after == before
