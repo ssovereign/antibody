@@ -56,6 +56,7 @@ DEFAULT_ALLOWED = ["Bash", "PowerShell", "Write", "Edit", "MultiEdit", "Notebook
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", ".cache", ".antibody"}
 MAX_FILES, MAX_FILE_BYTES = 2000, 1_000_000
+MEMORY_PREFIX = "_claude_session/memory/"
 
 NET_TOOLS = re.compile(r"(?<![\w.-])(curl|wget|nc|ncat|netcat|scp|sftp|rsync|ftp|telnet|ssh|http|https|invoke-webrequest|iwr|invoke-restmethod|irm|"
                        r"certutil|bitsadmin|socat)(?:\.exe)?(?![\w-])", re.I)
@@ -191,7 +192,7 @@ class ClaudeCodeGuard:
         if not m:
             if agent["config"].get("autosave", True):
                 try:  # checkpoint before every prompt: files + exact conversation, like Claude Code's rewind points
-                    self.checkpoint(agent, sid, "auto: " + " ".join(text.split())[:60], f"claude_code:{sid}")
+                    self.checkpoint(agent, sid, "before: " + " ".join(text.split())[:60], f"claude_code:{sid}")
                 except Exception as e:  # never block the user's prompt on a checkpoint problem
                     self.core.journal.append(project_id, run["run_id"], "checkpoint.failed", {"error": f"{type(e).__name__}: {str(e)[:200]}"},
                                              actor_type="host")
@@ -455,6 +456,22 @@ class ClaudeCodeGuard:
         old = self.core.versions.manifest_state(pid, self.core.versions.version(from_version)["manifest"])["files"] if from_version else {}
         skip = lambda rel: rel.startswith("_claude_session/") or rel.startswith(".claude/settings") or rel == ".mcp.json"  # noqa: E731
         changes = []
+        mem = self.memory_dir(agent)
+        new_mem = {k[len(MEMORY_PREFIX):]: v for k, v in new.items() if k.startswith(MEMORY_PREFIX)}
+        old_mem = {k[len(MEMORY_PREFIX):] for k in old if k.startswith(MEMORY_PREFIX)}
+        if new_mem or old_mem:  # versions saved before memory was tracked leave memory alone
+            for rel, info in new_mem.items():
+                dst = mem / rel
+                data = self.core.objects.get(pid, info["blob"])
+                if not (dst.exists() and dst.read_bytes() == data) and within(str(dst), str(mem)):
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_bytes(data)
+                    changes.append("memory: " + rel)
+            for rel in sorted(old_mem - set(new_mem)):
+                dst = mem / rel
+                if dst.is_file() and within(str(dst), str(mem)):
+                    dst.unlink()
+                    changes.append("memory removed: " + rel)
         for rel, info in new.items():
             dst = pdir / rel
             if skip(rel) or not within(str(dst), str(pdir)):
@@ -493,6 +510,12 @@ class ClaudeCodeGuard:
         ws.mkdir(parents=True, exist_ok=True)
         wanted: dict[str, bytes | Path] = {str(p.relative_to(pdir)).replace("\\", "/"): p for p in self.project_files(pdir)}
         tpath = self._transcript_path(agent, session_id) if include_transcript else None
+        if include_transcript:
+            mem = self.memory_dir(agent)
+            if mem.is_dir():
+                for f in sorted(mem.rglob("*")):
+                    if f.is_file() and f.stat().st_size <= MAX_FILE_BYTES:
+                        wanted[f"{MEMORY_PREFIX}{f.relative_to(mem).as_posix()}"] = f
         if tpath:
             data = Path(tpath).read_bytes()
             entries = cc.parse_lines(data)
@@ -502,7 +525,7 @@ class ClaudeCodeGuard:
             wanted[cc.META] = json.dumps({"session_id": session_id or sid, "leaf_uuid": cc.leaf_uuid(entries)}, sort_keys=True).encode()
         for p in sorted(ws.rglob("*"), reverse=True):
             rel = str(p.relative_to(ws)).replace("\\", "/")
-            if p.is_file() and rel not in wanted and not (rel.startswith("_claude_session/") and not tpath):
+            if p.is_file() and rel not in wanted and not (rel.startswith("_claude_session/") and not include_transcript):
                 p.unlink()
             elif p.is_dir() and not any(p.iterdir()):
                 p.rmdir()
@@ -516,6 +539,9 @@ class ClaudeCodeGuard:
             if not dst.exists() or dst.read_bytes() != data:
                 dst.write_bytes(data)
         return {"files": len(wanted), "conversation": bool(tpath)}
+
+    def memory_dir(self, agent: dict) -> Path:
+        return cc.projects_root() / cc.encode_dir(agent["config"]["project_dir"]) / "memory"
 
     def checkpoint(self, agent: dict, session_id: str | None, label: str, actor: str) -> dict | None:
         """Save files + the exact conversation, like Claude Code's per-message checkpoints (but of the whole folder)."""
@@ -617,6 +643,9 @@ class ClaudeCodeGuard:
             blobs[f"{cc.PARTS_DIR}/{i:04d}.jsonl"] = {"blob": self.core.objects.put(project_id, part)}
         blobs[cc.META] = {"blob": self.core.objects.put(project_id, json.dumps(
             {"session_id": None, "leaf_uuid": cc.leaf_uuid(merged_chain)}, sort_keys=True).encode())}
+        for k, i in v.manifest_state(project_id, v.version(ours)["manifest"])["files"].items():
+            if k.startswith(MEMORY_PREFIX):
+                blobs[k] = {"blob": i["blob"]}
         blobs[cc.MERGE_RECORD] = {"blob": self.core.objects.put(project_id, json.dumps(record, ensure_ascii=False, indent=1, default=str).encode())}
         v.reset_workspace(project_id, branch["workspace_dir"], blobs)
         nv = v.save(project_id, branch["branch_id"], None, f"merge {theirs_name} (negotiated)", actor, parents=[ours, theirs])

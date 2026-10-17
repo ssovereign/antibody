@@ -76,7 +76,7 @@ def test_checkpoint_every_prompt_and_rewind_to_exact_state(setup, tmp_path, core
     tr.turn("add a farewell function", "Added farewell.", tool="Write")
     (proj / "farewell.py").write_text("def bye():\n    return 'bye'\n", encoding="utf-8")
     log = ab("log")
-    assert "auto: add a farewell function" in log and "auto: make greet friendlier" in log and "~0" in log
+    assert "before: add a farewell function" in log and "before: make greet friendlier" in log and "~0" in log
 
     out = ab("undo")                                     # back to just before "add a farewell function"
     assert "Rewound 1 prompt" in out and "claude --resume" in out
@@ -106,8 +106,24 @@ def test_rewind_keeps_unsaved_work_by_checkpointing_first(setup, core):
     (proj / "greet.py").write_text("changed by hand\n", encoding="utf-8")
     ab("undo")
     ab("switch main")
-    assert "auto: before undo" in ab("log")
+    assert "before: ab: undo" in ab("log")
     assert (proj / "greet.py").read_text(encoding="utf-8") == "changed by hand\n"
+
+
+def test_undo_also_rolls_back_claude_code_memory(setup, core):
+    proj, tr, prompt, ab = setup
+    import os
+    mem = cc.projects_root() / cc.encode_dir(os.path.realpath(proj)) / "memory"
+    mem.mkdir(parents=True)
+    (mem / "MEMORY.md").write_text("- prefers tabs\n", encoding="utf-8")
+    prompt("remember the code word TERMINAL")             # checkpoint: memory without the code word
+    tr.turn("remember the code word TERMINAL", "Saved to memory.", tool="Write")
+    (mem / "code-word.md").write_text("code word: TERMINAL\n", encoding="utf-8")
+    (mem / "MEMORY.md").write_text("- prefers tabs\n- [code word](code-word.md)\n", encoding="utf-8")
+    out = ab("undo")
+    assert "memory removed: code-word.md" in out and "memory: MEMORY.md" in out
+    assert not (mem / "code-word.md").exists()
+    assert (mem / "MEMORY.md").read_text(encoding="utf-8") == "- prefers tabs\n"
 
 
 def test_chain_follows_live_branch_after_claude_code_rewind(tmp_path):

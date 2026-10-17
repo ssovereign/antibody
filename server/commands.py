@@ -35,7 +35,8 @@ HELP = """Version history commands (like Git, for this agent):
   runs [n]                    recent runs on this branch
   effects [run]               what a run did outside the agent (default: last run)
 For Claude Code projects (typed as 'ab: <command>' in Claude Code):
-  A checkpoint (files + the exact conversation) is saved before every prompt you send.
+  A checkpoint ("before: <your prompt>") of files, the exact conversation and Claude Code's memory
+  for this project is saved before every prompt you send.
   rewind [n]                  go back n prompts: files and agent state as they were (default 1)
   undo                        same as 'rewind 1'
   restore / switch / rewind   write that version's files into the folder (like git checkout) and
@@ -134,9 +135,9 @@ class Commands:
                 # the project folder is this branch's working tree
                 host.sync_workspace(agent, branch, include_transcript=cmd in ("save", "commit"))
                 branch = self.v.branch(branch["branch_id"])
-                if moving and before and not self.v.is_clean(branch["branch_id"]):
-                    # never lose work: checkpoint the current files and conversation first
-                    host.checkpoint(agent, None, f"auto: before {cmd}", actor)
+                if moving and before:
+                    # never lose work: checkpoint files, conversation and memory first (saves only if something changed)
+                    host.checkpoint(agent, None, f"before: ab: {cmd}", actor)
                     branch = self.v.branch(branch["branch_id"])
                     before = branch["head_version"]
             out = handler(project_id, agent, branch, args, actor)
@@ -165,9 +166,11 @@ class Commands:
                     lines.append("  ...")
                 opened = host.open_state(agent, new["head_version"], f"ANTIBODY: {new['name']} @ {self.sid(new['head_version'])}")
                 if opened:
-                    lines.append(f"Agent state ({opened['messages']} conversation entries) is ready as a new Claude Code session:")
-                    lines.append(f"  claude --resume {opened['session_id']}")
-                    lines.append("Resume it to continue exactly where that agent was. This session keeps its own history.")
+                    lines.append(f"Agent state ({opened['messages']} conversation entries) saved as a new Claude Code session "
+                                 f"\"ANTIBODY: {new['name']} @ {self.sid(new['head_version'])}\". To continue as that agent, either:")
+                    lines.append("  - type /resume here and pick it from the list, or")
+                    lines.append(f"  - exit (/exit) and run in a terminal in this folder:  claude --resume {opened['session_id']}")
+                    lines.append("Don't paste the claude command as a message; it would go to Claude.")
                     if opened["removed"]:
                         lines.append(f"  ANTIBODY removed {len(opened['removed'])} quarantined instruction(s) from the restored conversation.")
                 else:
