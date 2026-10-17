@@ -148,6 +148,7 @@ function RunDetail({ runId }: { runId: string }) {
             <Btn onClick={() => run("cont", async () => { const n = await api(`/v1/runs/${runId}/continue`, { method: "POST", body: {} }); window.location.hash = `#/runs/${n.run_id}`; }, "Continuation started")}
                  busy={busy === "cont"} disabledReason={active ? "Pause first" : unknown ? "Reconcile unknown effects first" : r.adapter !== "langgraph_reference" ? "Proxy runs are driven by the host" : null}
                  title="Start a new run under the current authorization, keeping validated progress">Continue as new run</Btn>
+            <a className="btn" href={`#/effects/${runId}`} title="Everything this run did outside the agent, and how to mitigate it">What did this run do?</a>
           </div>
         ) : null
       }

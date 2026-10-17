@@ -483,9 +483,19 @@ def create_app(core: Core | None = None) -> FastAPI:
                 "dispositions": core.db.all("SELECT run_id, disposition, pattern_ref, reason, detail_json FROM dispositions WHERE source_id=? AND (chunk_index=? OR chunk_index IS NULL)", (sid, int(idx or 0)))}
 
     @app.get("/v1/effects")
-    def list_effects(project_id: str, run_id: str | None = None, state: str | None = None, p=Depends(principal)):
+    def list_effects(project_id: str, run_id: str | None = None, state: str | None = None, agent_id: str | None = None,
+                     tool_id: str | None = None, effect_class: str | None = None, q: str | None = None,
+                     include_children: bool = False, external_only: bool = False, p=Depends(principal)):
+        """Search effects by run (optionally with the runs it spawned), agent, tool, kind, state or free text."""
         need(p, project_id, "app", "operator")
-        return core.effects.list(project_id, run_id, state)
+        return core.effects.list(project_id, run_id, state, agent_id, tool_id, effect_class, q, include_children, external_only)
+
+    @app.get("/v1/runs/{run_id}/impact")
+    def run_impact(run_id: str, include_children: bool = True, p=Depends(principal)):
+        """Everything a run (and its child runs) did to the outside world, what was blocked, and how to mitigate it."""
+        pid = run_project(run_id)
+        need(p, pid, "app", "operator")
+        return core.effects.impact(pid, run_id, include_children)
 
     @app.get("/v1/effects/{operation_id}")
     def get_effect(operation_id: str, project_id: str, p=Depends(principal)):

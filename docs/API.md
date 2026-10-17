@@ -20,7 +20,7 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | GET | `/v1/capabilities` | Capabilities |
 | GET | `/v1/compare` | Compare |
 | GET | `/v1/decisions/{decision_id}` | Get Decision |
-| GET | `/v1/effects` | List Effects |
+| GET | `/v1/effects` | Search effects by run (optionally with the runs it spawned), agent, tool, kind, state or free text. |
 | GET | `/v1/effects/{operation_id}` | Get Effect |
 | POST | `/v1/effects/{operation_id}/reconcile` | Reconcile |
 | GET | `/v1/evaluations` | Evaluations |
@@ -54,6 +54,7 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | GET | `/v1/runs/{run_id}/decisions` | Run Decisions |
 | GET | `/v1/runs/{run_id}/events` | Run Events |
 | GET | `/v1/runs/{run_id}/graph` | Run Graph |
+| GET | `/v1/runs/{run_id}/impact` | Everything a run (and its child runs) did to the outside world, what was blocked, and how to mitigate it. |
 | POST | `/v1/runs/{run_id}/operations` | Runtimes obtain action_id/operation_id from the coordinator, never from the model. |
 | GET | `/v1/runs/{run_id}/packets` | Run Packets |
 | POST | `/v1/runs/{run_id}/pause` | Pause Run |

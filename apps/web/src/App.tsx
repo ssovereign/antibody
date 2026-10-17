@@ -90,7 +90,7 @@ export default function App() {
     case "knowledge": view = <Knowledge />; break;
     case "history": view = <History agentId={rest[0]} />; break;
     case "evaluation": view = <Evaluation evaluationId={rest[0]} />; break;
-    case "effects": view = <Effects />; break;
+    case "effects": view = <Effects runId={rest[0]} />; break;
     case "sources": view = <Sources sourceId={rest[0]} />; break;
     case "settings": view = <Settings />; break;
     default: view = <Overview />;

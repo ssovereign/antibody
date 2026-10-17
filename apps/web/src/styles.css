@@ -91,7 +91,7 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 .b-violet { background: var(--violet-soft); color: var(--violet); }
 .mode { border: 1px dashed currentColor; }
 
-button, .btn { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; }
+button, .btn { display: inline-block; text-decoration: none; font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; }
 button:hover:not([aria-disabled="true"]) { background: var(--surface-2); }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 button.primary:hover:not([aria-disabled="true"]) { filter: brightness(1.08); background: var(--accent); }
