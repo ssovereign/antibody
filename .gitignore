@@ -4,6 +4,6 @@ exports/
 __pycache__/
 *.pyc
 apps/web/node_modules/
-apps/web/dist/
+# apps/web/dist/ is committed: the launcher ships a prebuilt website so nobody needs Node
 .pytest_cache/
 notes_server_sent.jsonl

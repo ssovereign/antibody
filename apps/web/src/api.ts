@@ -83,7 +83,14 @@ export function signOut() {
 export async function bootstrap(pid?: string): Promise<{ project_id: string }> {
   const saved = keep("ab_access_token");
   if (saved) return signIn(saved, pid);
-  const wanted = pid || store("ab_project") || undefined;
+  let fromUrl: string | null = null;
+  try {
+    fromUrl = new URLSearchParams(window.location.search).get("project"); // e.g. the launcher opens ?project=demo_judge
+    if (fromUrl) window.history.replaceState(null, "", window.location.pathname + window.location.hash); // once, so switching projects still works
+  } catch {
+    fromUrl = null;
+  }
+  const wanted = pid || fromUrl || store("ab_project") || undefined;
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/v1/session/bootstrap`, {
