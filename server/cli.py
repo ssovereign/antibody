@@ -7,6 +7,7 @@
   python -m server.cli export [--project P]
   python -m server.cli backup DIR | restore-backup DIR
   python -m server.cli gc [--apply]
+  python -m server.cli claude-code-install --project-dir DIR [--project P] [--uninstall]
 """
 from __future__ import annotations
 
@@ -162,6 +163,17 @@ def cmd_gc(a) -> None:
     core.close()
 
 
+def cmd_claude_code(a) -> None:
+    core = _core(start_workers=False, recover=False)
+    try:
+        if a.uninstall:
+            print(json.dumps(core.claude_code.uninstall(a.project_dir), indent=1))
+        else:
+            print(json.dumps(core.claude_code.install(a.project, a.project_dir, sys.executable, str(ROOT)), indent=1))
+    finally:
+        core.close()
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="antibody")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -186,6 +198,11 @@ def main(argv=None) -> None:
     g = sub.add_parser("gc")
     g.add_argument("--apply", action="store_true")
     g.set_defaults(fn=cmd_gc)
+    cc = sub.add_parser("claude-code-install", help="guard Claude Code sessions in a project folder")
+    cc.add_argument("--project-dir", required=True)
+    cc.add_argument("--project", default="proj_demo")
+    cc.add_argument("--uninstall", action="store_true")
+    cc.set_defaults(fn=cmd_claude_code)
     a = ap.parse_args(argv)
     a.fn(a)
 

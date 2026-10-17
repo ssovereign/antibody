@@ -23,11 +23,18 @@ CAPABILITIES = {
                                                restore_cursor=True, isolate_workspace=True, cancel_or_pause=True, export_context=True),
     "mcp_proxy": AdapterCapabilities(intercept_actions=True, label_observations=True, export_messages=False,
                                      restore_cursor=False, isolate_workspace=False, cancel_or_pause=True, export_context=False),
+    "claude_code_hooks": AdapterCapabilities(intercept_actions=True, label_observations=True, export_messages=True,
+                                             restore_cursor=False, isolate_workspace=False, cancel_or_pause=True, export_context=False),
 }
+HOST_ADAPTERS = {"claude_code_hooks"}
 CAPABILITY_NOTES = {
     "langgraph_reference": "Reference agent: every tool call and observation passes through ANTIBODY; full save/restore of supported state.",
     "mcp_proxy": "Tool-only proxy: covers proxied tool calls. The host agent's context and model cursor are not visible, so full-agent "
                  "restore is disabled. A host that keeps a direct shell, browser or filesystem tool retains a bypass outside this protection.",
+    "claude_code_hooks": "Claude Code through its hooks: every built-in tool call (shell, file edits, reads, web fetches) and MCP call is checked "
+                         "before it runs, and what Claude reads is screened. Shell commands are classified by rules, not sandboxed. "
+                         "Project files and a copy of the conversation are versioned; the live conversation is rewound with Claude Code's own "
+                         "rewind, not by ANTIBODY. Only sessions in folders where the hooks are installed are covered.",
 }
 
 
@@ -49,7 +56,8 @@ class Coordinator:
 
     def capability_profiles(self) -> list[dict]:
         return [{"adapter": k, "capabilities": v.model_dump(), "note": CAPABILITY_NOTES[k],
-                 "tested_by": {"langgraph_reference": ["T03", "T07", "T08", "T09"], "mcp_proxy": ["T13"]}[k]} for k, v in CAPABILITIES.items()]
+                 "tested_by": {"langgraph_reference": ["T03", "T07", "T08", "T09"], "mcp_proxy": ["T13"],
+                              "claude_code_hooks": ["tests/test_claude_code.py"]}[k]} for k, v in CAPABILITIES.items()]
 
     # ================================================================ agents
     def create_agent(self, project_id: str, name: str, adapter: str = "langgraph_reference", config: dict | None = None,
@@ -181,6 +189,34 @@ class Coordinator:
         else:
             self.core.jobs.enqueue(project_id, "run", {"run_id": rid})
         return self.run(rid)
+
+    def start_host_run(self, project_id: str, agent_id: str, task_id: str, adapter: str, extra: dict | None = None) -> dict:
+        """A run driven by a host agent (Claude Code): ANTIBODY decides its tool calls but does not run its loop."""
+        agent = self.agent(agent_id)
+        task = self.core.projects.get_task(project_id, task_id)
+        policy = self.core.projects.policy(project_id)
+        reg = self.core.registry.head(project_id)
+        branch = self.core.versions.branch(agent["config"].get("current_branch") or agent["accepted_branch_id"])
+        rid = new_id("run")
+        start_cfg = {"schema_version": 1, "agent": {"agent_id": agent_id, "name": agent["name"], "adapter": adapter},
+                     "model": {"provider": "host", "model_id": "claude-code"}, "task_ref": f"{task_id}@{task['revision']}",
+                     "policy_revision": policy["revision"], "registry_revision": reg,
+                     "limits": {"max_tool_steps": task["body"]["max_tool_steps"], "repeat_failure_limit": self.config.REPEAT_FAILURE_LIMIT,
+                                "no_progress_limit": 10_000, "max_repair_steps": 0, "max_run_cost": "0"},
+                     "context_budget_tokens": 0, "purpose": "host_session", "environment": branch["state"]["environment"]}
+        start_cfg.update(extra or {})
+        now = utcnow()
+        self.db.execute("INSERT INTO runs(run_id,project_id,agent_id,branch_id,task_id,task_revision,adapter,mode,status,health,policy_revision,registry_revision,base_version,context_budget_tokens,start_config_json,start_config_hash,thread_id,purpose,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (rid, project_id, agent_id, branch["branch_id"], task_id, task["revision"], adapter, "live", "running", "Healthy",
+                         policy["revision"], reg, branch["head_version"], 0, dumps(start_cfg), hash_value(_canon(start_cfg)), f"host:{rid}",
+                         "host_session", now, now))
+        run = self.run(rid)
+        self.journal.append(project_id, rid, "run.started", {"agent_id": agent_id, "adapter": adapter, "mode": "live",
+                                                              "capabilities": self.capabilities(adapter).model_dump(), "host": (extra or {}).get("host"),
+                                                              "note": "host-driven session; ANTIBODY checks its tool calls"}, actor_type="coordinator",
+                            policy_revision=policy["revision"], registry_revision=reg)
+        self.core.registry.ack(run, reg, "run_start")
+        return run
 
     def _initial_state(self, run: dict) -> dict:
         return {"run_id": run["run_id"], "branch_id": run["branch_id"], "thread_id": run["thread_id"],

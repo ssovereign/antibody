@@ -37,11 +37,15 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | POST | `/v1/gc` | Gc |
 | POST | `/v1/grants` | Create Grant |
 | GET | `/v1/health` | Health |
+| POST | `/v1/hooks/claude-code` | One Claude Code hook event (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SessionEnd). |
 | GET | `/v1/incidents` | List Incidents |
 | GET | `/v1/incidents/{incident_id}` | Get Incident |
 | POST | `/v1/incidents/{incident_id}/counterfactual` | Controlled attribution: rerun in sandboxes with only the linked spans masked (bounded repeats). |
 | GET | `/v1/integrations/claude` | Connection status. Never returns the key itself (only its last four characters). |
 | PATCH | `/v1/integrations/claude` | Claude Settings |
+| GET | `/v1/integrations/claude-code` | Claude Code Status |
+| POST | `/v1/integrations/claude-code/install` | Claude Code Install |
+| POST | `/v1/integrations/claude-code/uninstall` | Claude Code Uninstall |
 | POST | `/v1/integrations/claude/key` | Claude Key |
 | DELETE | `/v1/integrations/claude/key` | Claude Key Clear |
 | POST | `/v1/integrations/claude/test` | Claude Test |

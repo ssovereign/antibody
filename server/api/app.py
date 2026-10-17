@@ -9,10 +9,12 @@ unavailable.
 """
 from __future__ import annotations
 
+
 import asyncio
 import base64
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -762,6 +764,41 @@ def create_app(core: Core | None = None) -> FastAPI:
                 "task_id": "mcp_tools",
                 "note": "The first start creates a 'Claude Code (via MCP)' agent and an 'mcp_tools' assignment (read and write files only). "
                         "Edit that assignment in Assignments to widen or narrow what the connected agent may do."}
+
+    # ------------------------------------------------------------ Claude Code guard (hooks)
+    @app.post("/v1/hooks/claude-code")
+    def claude_code_hook(project_id: str, body: dict = Body(...), p=Depends(principal)):
+        """One Claude Code hook event (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SessionEnd).
+        Returns what the hook script should print and its exit code."""
+        need(p, project_id, "app", "operator")
+        return core.claude_code.handle(project_id, body)
+
+    @app.get("/v1/integrations/claude-code")
+    def claude_code_status(project_id: str, p=Depends(principal)):
+        need(p, project_id, "app", "operator")
+        rows = []
+        for a in core.coordinator.agents(project_id):
+            if a["adapter"] != "claude_code_hooks":
+                continue
+            pdir = a["config"]["project_dir"]
+            sp = Path(pdir) / ".claude" / "settings.local.json"
+            installed = sp.exists() and "claude_hook.py" in sp.read_text(encoding="utf-8", errors="ignore")
+            last = core.db.one("SELECT session_id, last_seen, run_id FROM host_sessions WHERE agent_id=? ORDER BY last_seen DESC LIMIT 1", (a["agent_id"],))
+            counts = core.db.one("SELECT COUNT(*) AS n, SUM(outcome='DENY') AS denied, SUM(outcome='PAUSE') AS asked FROM host_tool_calls h "
+                                 "JOIN runs r ON r.run_id=h.run_id WHERE r.agent_id=?", (a["agent_id"],))
+            rows.append({"agent_id": a["agent_id"], "name": a["name"], "project_dir": pdir, "installed": installed, "last_session": last,
+                         "calls": counts["n"] or 0, "denied": counts["denied"] or 0, "asked": counts["asked"] or 0})
+        return {"projects": rows, "python": sys.executable}
+
+    @app.post("/v1/integrations/claude-code/install")
+    def claude_code_install(body: dict = Body(...), p=Depends(principal)):
+        need(p, body.get("project_id"), "app", "operator")
+        return core.claude_code.install(body["project_id"], body["project_dir"], sys.executable, str(ROOT))
+
+    @app.post("/v1/integrations/claude-code/uninstall")
+    def claude_code_uninstall(body: dict = Body(...), p=Depends(principal)):
+        need(p, body.get("project_id"), "app", "operator")
+        return core.claude_code.uninstall(body["project_dir"])
 
     # ------------------------------------------------------------ chat
     @app.get("/v1/chats")

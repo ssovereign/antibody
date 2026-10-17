@@ -51,6 +51,39 @@ bin/antibody status
 
 Commands: `status`, `log`, `save "msg"`, `diff [a] [b]`, `branch [name] [from ref]`, `switch`, `restore <ref>`, `merge <branch> [keys|all]`, `remember`, `forget`, `lessons`, `disable`, `revoke`, `runs`, `effects`. Refs: `HEAD`, `HEAD~1`, a branch name, a version id prefix, or a label. `bin/antibody chat --new "title" "message"` chats from the terminal.
 
+**Guard Claude Code's own tools (hooks).** This protects a real Claude Code session (the desktop app's Code tab or `claude` in a terminal) in a project folder you choose:
+
+```bash
+.venv/Scripts/python.exe -m server.cli claude-code-install --project-dir C:/path/to/your-project
+```
+
+Or use *Settings → Guard Claude Code in a project folder*. This adds hooks to that folder's `.claude/settings.local.json` and keeps your existing settings. Claude Code then sends every tool call to ANTIBODY (`scripts/claude_hook.py` → `POST /v1/hooks/claude-code`) before running it. That covers Bash/PowerShell, Write/Edit, Read, WebFetch and MCP tools.
+
+What happens to a call:
+- **Allowed:** Claude Code's normal permission prompt still applies.
+- **Blocked:** the call never runs, and Claude sees the reason.
+- **Uncertain:** you are asked in Claude Code.
+
+What gets checked:
+- Writes outside the folder are blocked, and so are edits to the guard's own settings.
+- Shell commands are classified by rules:
+  - Piping a download into a shell, reading credentials, or sending secrets or environment variables over the network is blocked.
+  - Pushes, publishes, uploads and force-deletes ask you.
+- Everything Claude reads or fetches is screened against accepted threat patterns. An action whose details come only from instruction-like text in that content is blocked.
+
+Each session is a run of the agent "Claude Code: <folder>".
+
+Type `ab: <command>` in Claude Code to use the Git-style commands on that folder. These prompts never reach Claude.
+- `ab: save "msg"` saves the folder's files plus a copy of the conversation.
+- `ab: restore <ref>` and `ab: switch <branch>` rewrite the folder's files, like `git checkout`. They refuse while there are unsaved changes.
+- `ab: transcript <ref>` shows the saved conversation.
+
+The live conversation is rewound with Claude Code's own rewind (Esc twice); ANTIBODY does not edit Claude Code's session files.
+
+If ANTIBODY is not running, calls that can change things ask you. Set `ANTIBODY_FAIL_MODE=closed` to block them instead, or `open` to skip checks.
+
+This is a policy check on tool calls, not an operating-system sandbox. The installer refuses the ANTIBODY folder itself.
+
 **Claude Code / Claude Desktop over MCP.** *Settings → Connect Claude Code* shows a ready-made `claude mcp add …` command and `.mcp.json` block. They run `scripts/mcp_serve.py`, which serves ANTIBODY's tools limited to the `mcp_tools` assignment. Every call is checked and recorded as a run of the "Claude Code (via MCP)" agent. Only tools reached through ANTIBODY are protected; the host's own built-in tools are not.
 
 ## What the demo shows
@@ -104,6 +137,7 @@ Versioned lessons ◀── Learning + independent evaluation ◀── Health m
 |---|---|---|---|---|---|---|---|
 | `langgraph_reference` | yes | yes | yes | yes | yes | yes | yes |
 | `mcp_proxy` | yes | yes | no | no | no | yes | no |
+| `claude_code_hooks` | yes | yes | yes (transcript copy) | no (files and memory only) | no | yes | no |
 
 An agent is protected only for actions routed through a tested adapter. A host that keeps a direct shell, browser or filesystem tool alongside the proxy has a bypass, and the capability view says so. No native Codex, Cursor or Letta adapter is built. The shell executor is disabled.
 

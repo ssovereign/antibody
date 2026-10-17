@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import shlex
 
-from .canonical import loads
+from .canonical import dumps, loads
 from .projects import ConflictError, InvalidRequest, NotFound
 
 HELP = """Version history commands (like Git, for this agent):
@@ -34,6 +34,10 @@ HELP = """Version history commands (like Git, for this agent):
   revoke <lesson> <reason>    withdraw a lesson everywhere (all agents)
   runs [n]                    recent runs on this branch
   effects [run]               what a run did outside the agent (default: last run)
+For Claude Code projects (typed as 'ab: <command>' in Claude Code):
+  switch / restore / merge also change the files in your project folder, like git checkout;
+  they refuse while there are unsaved changes.
+  transcript [ref]            read the conversation saved with a version
 Refs: HEAD, HEAD~1, a branch name, a version id prefix, or a quoted label."""
 
 
@@ -115,7 +119,17 @@ class Commands:
         handler = handler or aliases.get(cmd)
         if handler is None:
             return {"ok": False, "output": f"Unknown command '{cmd}'. Type 'help' for the list.", "branch_id": branch["branch_id"]}
+        host = self.core.claude_code if agent["adapter"] == "claude_code_hooks" else None
+        moving = bool(host) and (cmd in ("switch", "checkout", "restore", "rollback") or (cmd == "merge" and len(args) >= 2))
+        before = branch["head_version"]
         try:
+            if host:
+                # the project folder is this branch's working tree
+                host.sync_workspace(agent, branch, include_transcript=cmd in ("save", "commit"))
+                branch = self.v.branch(branch["branch_id"])
+                if moving and before and not self.v.is_clean(branch["branch_id"]):
+                    raise CommandError("Your project folder has unsaved changes. Run 'save' first (or 'diff' to see them), "
+                                       "so switching does not lose them.")
             out = handler(project_id, agent, branch, args, actor)
         except CommandError as e:
             return {"ok": False, "output": str(e), "branch_id": branch["branch_id"]}
@@ -131,7 +145,25 @@ class Commands:
             out = {"output": out}
         out.setdefault("branch_id", branch["branch_id"])
         out.setdefault("ok", True)
+        if host:
+            new = self.v.branch(out["branch_id"])
+            if moving and new["head_version"] and new["head_version"] != before:
+                changes = host.checkout(agent, before, new["head_version"])
+                lines = [f"Project folder updated: {len(changes)} file change(s)."] + [f"  {c}" for c in changes[:25]]
+                if len(changes) > 25:
+                    lines.append("  ...")
+                lines.append("The chat itself is not rewound; use Claude Code's rewind (Esc twice) for that.")
+                out["output"] += "\n" + "\n".join(lines)
+            if out["branch_id"] != agent["config"].get("current_branch"):
+                cfg = dict(agent["config"], current_branch=out["branch_id"])
+                self.db.execute("UPDATE agents SET config_json=? WHERE agent_id=?", (dumps(cfg), agent["agent_id"]))
         return out
+
+    def cmd_transcript(self, pid, agent, branch, args, actor):
+        if agent["adapter"] != "claude_code_hooks":
+            raise CommandError("transcript is for Claude Code projects")
+        vid = self.resolve(pid, agent["agent_id"], branch, args[0] if args else "HEAD")
+        return f"Conversation saved with {self.sid(vid)} {self._label(vid)}:\n" + self.core.claude_code.transcript(pid, vid)
 
     # ------------------------------------------------------------ commands
     def cmd_help(self, pid, agent, branch, args, actor):
@@ -183,7 +215,7 @@ class Commands:
                 raise CommandError("nothing saved yet to compare against")
             a = self.resolve(pid, agent["agent_id"], branch, args[0]) if args else branch["head_version"]
             sa = self.v.manifest_state(pid, self.v.version(a)["manifest"])
-            d = diff_states(self.v, pid, sa, self.v.working_state(branch["branch_id"], store=False))
+            d = diff_states(self.v, pid, sa, self.v.working_state(branch["branch_id"], store=True))  # text diffs read the blobs
             title = f"{self.sid(a)} -> current (unsaved)"
         if not d["summary"]:
             return f"No differences ({title})."

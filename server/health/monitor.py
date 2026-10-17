@@ -108,6 +108,9 @@ class HealthMonitor:
             return
         if view.reason_code == "DEDUPLICATED":
             return
+        host = run["adapter"] in ("claude_code_hooks",)
+        if host and view.outcome == "PAUSE":
+            return  # the host asks its user to confirm; the session keeps going
         if view.outcome == "PAUSE":
             if view.reason_code == "RUN_NOT_ACTIVE":
                 return  # the run is already stopped; keep its recorded reason
@@ -134,7 +137,7 @@ class HealthMonitor:
                                        [f"decision:{view.decision_id}"] + anchored, hyps,
                                        fingerprint=hash_value({"deny": view.reason_code, "decision": view.decision_id}),
                                        attribution_level="hypothesized" if anchored else "observed")
-        if anchored and run["health"] in ("Healthy", "Degraded", "Recovering"):
+        if anchored and not host and run["health"] in ("Healthy", "Degraded", "Recovering"):
             self.transition(run["run_id"], "Paused", "AUTHORIZATION_VIOLATION", {"decision_id": view.decision_id})
             self.core.coordinator.context_repair(run, inc, anchored)
         else:

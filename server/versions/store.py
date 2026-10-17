@@ -20,7 +20,8 @@ from ..canonical import canonical_bytes, content_ref, dumps, hash_value, loads, 
 from ..projects import ConflictError, InvalidRequest, NotFound
 
 MANIFEST_SCHEMA = 1
-SUPPORTED_ADAPTERS = {"langgraph_reference", "mcp_proxy"}
+SUPPORTED_ADAPTERS = {"langgraph_reference", "mcp_proxy", "claude_code_hooks"}
+FILE_RESTORE_ADAPTERS = {"claude_code_hooks"}  # restore brings back files and memory; the host keeps its own conversation
 
 
 def default_branch_state(agent: dict) -> dict:
@@ -257,7 +258,7 @@ class VersionStore:
         preview = self.preview_restore(project_id, version_id)
         v = self.version(version_id)
         m = v["manifest"]
-        if purpose == "restore" and not preview["capabilities"]["restore_cursor"]:
+        if purpose == "restore" and not preview["capabilities"]["restore_cursor"] and m.get("adapter") not in FILE_RESTORE_ADAPTERS:
             raise InvalidRequest("CAPABILITY_UNSUPPORTED", "this adapter cannot restore an agent cursor; only tool history and workspace versions are available", status=422)
         src_branch = self.branch(v["branch_id"])
         loaded = self.manifest_state(project_id, m)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .chat import ChatService
 from .claude import ClaudeConnection
+from .claude_code import ClaudeCodeGuard
 from .commands import Commands
 from .config import Config
 from .context.compiler import ContextCompiler
@@ -55,6 +56,7 @@ class Core:
         self.agent = ReferenceAgent(self)
         self.chat = ChatService(self)
         self.commands = Commands(self)
+        self.claude_code = ClaudeCodeGuard(self)
         self.refresh_auditor()
         self.worker_identity = {"role": "worker", "actor_id": "worker:local", "project_id": None}
         self.propagate_runtime_errors = False

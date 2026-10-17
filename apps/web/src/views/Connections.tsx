@@ -56,6 +56,52 @@ export function ConnectClaude() {
   );
 }
 
+export function GuardClaudeCode() {
+  const pid = currentProject();
+  const s = useApi(() => api(`/v1/integrations/claude-code${q({ project_id: pid })}`), [pid]);
+  const [dir, setDir] = useState("");
+  const [result, setResult] = useState<any>(null);
+  const { busy, run } = useAction();
+  if (s.error) return <div className="card"><ErrorBox error={s.error} retry={s.reload} /></div>;
+  if (!s.data) return <div className="card"><Loading what="Claude Code guard" /></div>;
+  const install = (d: string) => run("inst", () => api(`/v1/integrations/claude-code/install`, { method: "POST", body: { project_id: pid, project_dir: d } })
+    .then((r: any) => { setResult(r); s.reload(); }), "Guard installed");
+  const uninstall = (d: string) => run("un", () => api(`/v1/integrations/claude-code/uninstall`, { method: "POST", body: { project_id: pid, project_dir: d } })
+    .then(() => { setResult(null); s.reload(); }), "Guard removed");
+  return (
+    <div className="card" id="guard-claude-code">
+      <h2>Guard Claude Code in a project folder</h2>
+      <p className="small">Installs hooks so every tool call Claude Code makes in that folder (shell commands, file edits, reads, web fetches,
+        MCP tools) is checked by ANTIBODY first. Allowed calls continue to Claude Code's normal permission prompt; blocked calls come back
+        to Claude with the reason; uncertain ones ask you. Typing <code>ab: save</code>, <code>ab: log</code>, <code>ab: diff</code> or{" "}
+        <code>ab: restore HEAD~1</code> in Claude Code manages the folder's version history without reaching Claude.</p>
+      <div className="row" style={{ marginTop: 8 }}>
+        <input id="cc-dir" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="C:\Users\you\Documents\my-project" style={{ flex: "1 1 320px" }}
+               aria-label="Project folder" />
+        <Btn kind="primary" onClick={() => install(dir.trim())} busy={busy === "inst"} disabledReason={!dir.trim() ? "Enter a folder" : null}>Install guard</Btn>
+      </div>
+      <p className="small muted">Writes <code>.claude/settings.local.json</code> in that folder (your existing settings are kept). Not allowed for the
+        ANTIBODY folder itself. ANTIBODY must be running (<code>make dev</code>); if it is not, changing calls ask you first.</p>
+      {result ? <p className="small"><Badge kind="ok">installed</Badge> {result.agent.name}. {result.next}</p> : null}
+      {s.data.projects.length ? (
+        <table><thead><tr><th>Folder</th><th>Hooks</th><th>Calls checked</th><th>Last session</th><th></th></tr></thead><tbody>
+          {s.data.projects.map((x: any) => (
+            <tr key={x.agent_id}>
+              <td><b>{x.name}</b><div className="mono small muted">{x.project_dir}</div></td>
+              <td>{x.installed ? <Badge kind="ok">installed</Badge> : <Badge kind="warn">not installed</Badge>}</td>
+              <td className="small">{x.calls} ({x.denied} blocked, {x.asked} asked you)</td>
+              <td className="small">{x.last_session ? <a href={`#/runs/${x.last_session.run_id}`}>{when(x.last_session.last_seen)}</a> : "none yet"}</td>
+              <td>{x.installed
+                ? <button onClick={() => uninstall(x.project_dir)}>Remove</button>
+                : <button onClick={() => install(x.project_dir)}>Reinstall</button>}</td>
+            </tr>
+          ))}
+        </tbody></table>
+      ) : null}
+    </div>
+  );
+}
+
 export function ConnectClaudeCode() {
   const pid = currentProject();
   const s = useApi(() => api(`/v1/integrations/mcp${q({ project_id: pid })}`), [pid]);
@@ -68,7 +114,7 @@ export function ConnectClaudeCode() {
   return (
     <div className="card">
       <h2>Connect Claude Code or Claude Desktop</h2>
-      <p className="small">Lets an outside agent use ANTIBODY's tools over MCP. Every call is checked against the <code>{s.data.task_id}</code> assignment and
+      <p className="small">Optional: lets an outside agent use ANTIBODY's own protected tools over MCP. Every call is checked against the <code>{s.data.task_id}</code> assignment and
         shows up as a run of the "Claude Code (via MCP)" agent. This covers only the tools it reaches through ANTIBODY: its own built-in
         shell or file tools are not protected.</p>
       <h3>Claude Code (one command)</h3>
