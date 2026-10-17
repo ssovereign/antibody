@@ -62,6 +62,7 @@ def create_app(core: Core | None = None) -> FastAPI:
                                                      f"http://localhost:{cfg.API_PORT}"] + list(cfg.EXTRA_UI_ORIGINS),
                        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Last-Event-ID"])
+    app.add_middleware(EncodedBodyMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver", "[::1]"] + list(cfg.EXTRA_ALLOWED_HOSTS))
 
     # ------------------------------------------------------------ errors
@@ -1065,3 +1066,32 @@ def create_app(core: Core | None = None) -> FastAPI:
             return FileResponse(dist / "index.html")
 
     return app
+
+
+class EncodedBodyMiddleware:
+    """Hosting providers' edge firewalls block request bodies that look like shell attacks, and a guard for coding
+    agents must carry real shell commands. The connector therefore sends its JSON base64-encoded with the header
+    `X-Antibody-Body: b64`; this restores the original body before routing."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and (b"x-antibody-body", b"b64") in [(k.lower(), v) for k, v in scope.get("headers", [])]:
+            chunks, more = [], True
+            while more:
+                msg = await receive()
+                chunks.append(msg.get("body", b""))
+                more = msg.get("more_body", False)
+            data = base64.b64decode(b"".join(chunks) or b"")
+            delivered = False
+
+            async def replay():
+                nonlocal delivered
+                if not delivered:
+                    delivered = True
+                    return {"type": "http.request", "body": data, "more_body": False}
+                return await receive()
+            headers = [(k, v) for k, v in scope["headers"] if k.lower() != b"content-length"] + [(b"content-length", str(len(data)).encode())]
+            return await self.app(dict(scope, headers=headers), replay, send)
+        return await self.app(scope, receive, send)

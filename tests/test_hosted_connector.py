@@ -149,3 +149,29 @@ def test_connector_never_writes_outside_guarded_folders(hosted, tmp_path):
                                         {"op": "write", "path": str(folder / ".." / "escape.txt"), "data_b64": data},
                                         {"op": "write", "path": str(folder / "ok.txt"), "data_b64": data}])
     assert n == 1 and not victim.exists() and not (tmp_path / "escape.txt").exists() and (folder / "ok.txt").read_bytes() == b"pwned"
+
+
+def test_hosting_firewalls_never_see_raw_shell_commands(hosted, tmp_path):
+    """The connector sends hook events base64-encoded (X-Antibody-Body: b64); the server decodes them."""
+    import urllib.request
+    ac = hosted["ac"]
+    ac.connect(hosted["code"])
+    folder = tmp_path / "f"
+    folder.mkdir()
+    ac.guard(str(folder))
+    seen = {}
+    real = urllib.request.OpenerDirector.open
+
+    def spy(self, req, *a, **k):
+        if getattr(req, "data", None):
+            seen["body"] = req.data
+            seen["header"] = req.get_header("X-antibody-body")
+        return real(self, req, *a, **k)
+    urllib.request.OpenerDirector.open = spy
+    try:
+        res = ac.send_event(ac.load_config(), {"hook_event_name": "PreToolUse", "session_id": "w1", "cwd": str(folder), "tool_name": "Bash",
+                                               "tool_input": {"command": "ls 2>/dev/null; which python | head -3"}, "tool_use_id": "w1"}, str(folder))
+    finally:
+        urllib.request.OpenerDirector.open = real
+    assert seen["header"] == "b64" and b"/dev/null" not in seen["body"] and b"which" not in seen["body"]
+    assert res.get("stdout") is None  # decoded and decided normally (allowed)

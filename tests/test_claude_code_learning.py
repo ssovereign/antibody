@@ -134,3 +134,13 @@ def test_manual_acceptance_when_auto_accept_is_off(core, cc):
 def test_classify(tool, cmd, err, family, key):
     c = classify(tool, cmd, err)
     assert (c["family"], c["key"]) == (family, key)
+
+
+def test_lessons_never_stop_commands_that_only_inspect(core, cc):
+    hook, bash = cc
+    bash("python -m pytest -q", NO_PYTEST)
+    bash("python -m pytest -q", NO_PYTEST, sid="s2")
+    assert bash("python -m pytest -q", sid="s3")[0] == "blocked"
+    assert bash("python -m pip show pytest 2>&1 | head -3", sid="s3")[0] == "ran"   # checking whether it's installed now
+    assert bash("which python", sid="s3")[0] == "ran"
+    assert bash("pip show pytest; python -m pytest -q", sid="s3")[0] == "blocked"   # still contains the failing step
