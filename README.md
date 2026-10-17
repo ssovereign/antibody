@@ -1,6 +1,6 @@
 # ANTIBODY
 
-> **Judges / first-time visitors:** read [`JUDGES.md`](JUDGES.md). Double-click `start-antibody` and you're running in about two minutes.
+> **Judges:** start with **[TEST_ME.md](TEST_ME.md)**, a 10-minute test. More detail in [JUDGES.md](JUDGES.md).
 
 ANTIBODY is a protected workspace for AI agents. It checks every tool action before it runs, treats outside content as data, watches run health, learns tested fixes, shares accepted knowledge between agents, and keeps a Git-like history of agent state. **RECEIPT** is the version-history subsystem: save, branch, compare, keep selected changes, and restore without repeating external actions.
 
