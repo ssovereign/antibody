@@ -52,7 +52,7 @@ How to tell it: the attack never reached the model, which is the payoff of the l
 Open a **new** terminal (so `claude` is on PATH):
 
 ```powershell
-cd $env:USERPROFILE\Documentsntibody-sandbox
+cd $env:USERPROFILE\Documents\antibody-sandbox
 ```
 ```powershell
 claude
