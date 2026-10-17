@@ -1,0 +1,10 @@
+{
+ "note": "Saved price configuration used for cost estimates; edit for your provider. Placeholder values, not current prices.",
+ "currency": "USD",
+ "models": {
+  "reference-planner-1": {
+   "input_per_mtok": "0",
+   "output_per_mtok": "0"
+  }
+ }
+}

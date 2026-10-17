@@ -1,0 +1,9 @@
+.venv/
+var/
+exports/
+__pycache__/
+*.pyc
+apps/web/node_modules/
+apps/web/dist/
+.pytest_cache/
+notes_server_sent.jsonl
