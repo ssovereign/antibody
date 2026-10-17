@@ -144,3 +144,11 @@ def test_lessons_never_stop_commands_that_only_inspect(core, cc):
     assert bash("python -m pip show pytest 2>&1 | head -3", sid="s3")[0] == "ran"   # checking whether it's installed now
     assert bash("which python", sid="s3")[0] == "ran"
     assert bash("pip show pytest; python -m pytest -q", sid="s3")[0] == "blocked"   # still contains the failing step
+
+
+def test_compound_inspection_is_allowed_but_a_hidden_repeat_is_not(core, cc):
+    hook, bash = cc
+    bash("python -m pytest -q", NO_PYTEST)
+    bash("python -m pytest -q", NO_PYTEST, sid="s2")
+    assert bash('ls -d .venv venv 2>/dev/null; python -m pip show pytest 2>&1 | head -3; which python', sid="s3")[0] == "ran"
+    assert bash('cd app && ls && python -m pytest -q 2>&1 | tail -3', sid="s3")[0] == "blocked"

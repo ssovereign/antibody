@@ -157,10 +157,12 @@ class FailureLearning:
         """An accepted lesson that this command would repeat, or None. `# antibody:retry` lets one attempt through."""
         if RETRY_MARK in command:
             return None
-        if INSPECT.search(command) and not re.search(r"[;&|]", re.sub(r"2>(?:&1|/dev/null|\$null)|\|\s*(?:head|tail|Select-Object)\b[^;&|]*", "", command)):
-            return None  # a pure inspection (possibly piped into head) is never a repeat of the failure
+        # look at each step of a compound command: only a step that would repeat the failure counts, and a step
+        # that merely inspects the environment (pip show, which, ...) never does
+        cleaned = re.sub(r"2>(?:&1|/dev/null|\$null)|\|\s*(?:head|tail|Select-Object|grep|findstr)\b[^;&|]*", "", command)
+        steps = [s.strip() for s in re.split(r"&&|\|\||;|\|", cleaned) if s.strip()] or [command]
         for l in self.lessons(project_id, agent, tool):
-            if self._matches(l, command):
+            if any(self._matches(l, s) and not INSPECT.search(s) for s in steps):
                 self.db.execute("INSERT INTO lesson_uses(project_id,run_id,lesson_ref,use_kind,detail_json,created_at) VALUES (?,?,?,?,?,?)",
                                 (project_id, run["run_id"], l["ref"], "prevented_failure", dumps({"command": command[:300]}), utcnow()))
                 return l
