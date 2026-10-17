@@ -26,7 +26,10 @@ export default function History({ agentId }: { agentId?: string }) {
       <ErrorBox error={versions.error || branches.error} retry={reload} />
       {agents.loading && !agents.data ? <Loading what="agents" /> : null}
       {agents.data && !aid ? <Empty>No agents.</Empty> : null}
-      {agent && !agent.capabilities.restore_cursor ? (
+      {agent && agent.adapter === "claude_code_hooks" ? (
+        <div className="banner">This is a Claude Code project. Its saved states (files, exact conversation and memory), going back and negotiated
+          merges are on <a href={`#/claude-code/${agent.agent_id}`}>Claude Code history</a>.</div>
+      ) : agent && !agent.capabilities.restore_cursor ? (
         <div className="banner warn">This agent uses the tool-only proxy. Tool history and supported workspace versions are available; full-agent restore is disabled.</div>
       ) : null}
       {aid && versions.data && branches.data ? (

@@ -64,7 +64,8 @@ export default function Overview() {
                       </td>
                       <td>
                         {a.adapter}
-                        {!a.capabilities.restore_cursor ? <div className="small muted">tool-only proxy: no full restore</div> : null}
+                        {a.adapter === "claude_code_hooks" ? <div className="small muted"><a href={`#/claude-code/${a.agent_id}`}>Claude Code project · saved states</a></div>
+                          : !a.capabilities.restore_cursor ? <div className="small muted">tool-only proxy: no full restore</div> : null}
                       </td>
                       <td>
                         {a.last_run ? (
