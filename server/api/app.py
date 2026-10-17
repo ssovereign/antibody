@@ -59,9 +59,10 @@ def create_app(core: Core | None = None) -> FastAPI:
     app.state.core = core
     cfg = core.config
     app.add_middleware(CORSMiddleware, allow_origins=[cfg.UI_ORIGIN, "http://localhost:5173", f"http://127.0.0.1:{cfg.API_PORT}",
-                                                     f"http://localhost:{cfg.API_PORT}"],
-                       allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Last-Event-ID"])
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver", "[::1]"])
+                                                     f"http://localhost:{cfg.API_PORT}"] + list(cfg.EXTRA_UI_ORIGINS),
+                       allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                       allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Last-Event-ID"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver", "[::1]"] + list(cfg.EXTRA_ALLOWED_HOSTS))
 
     # ------------------------------------------------------------ errors
     def err(status: int, code: str, message: str, detail: Any = None) -> JSONResponse:
@@ -153,6 +154,21 @@ def create_app(core: Core | None = None) -> FastAPI:
             raise NotFound("project")
         token = core.projects.issue_token(pid, "app", "user:local")
         return {"token": token, "project_id": pid, "projects": projects, "role": "app"}
+
+    @app.post("/v1/session/login")
+    def login(body: dict = Body(...)):
+        """Hosted (token) mode: the UI signs in with an access token from `python -m server.cli invite`."""
+        tok = str(body.get("token", "")).strip()
+        p = core.projects.authenticate(tok)
+        if p["role"] not in ("app", "admin", "operator"):
+            raise AuthError(403, "ROLE_FORBIDDEN", "This token cannot use the web app.")
+        all_projects = [x["project_id"] for x in core.projects.list_projects()]
+        projects = all_projects if p["project_id"] is None else [p["project_id"]]
+        wanted = body.get("project_id")
+        pid = wanted if wanted in projects else (projects[0] if projects else None)
+        if not pid:
+            raise NotFound("project")
+        return {"token": tok, "project_id": pid, "projects": projects, "role": p["role"], "mode": cfg.PROJECT_AUTH_MODE}
 
     @app.get("/v1/capabilities")
     def capabilities(p=Depends(principal)):

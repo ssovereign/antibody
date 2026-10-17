@@ -1,6 +1,6 @@
 # Demo scripts, one per interface
 
-Before you start:
+Before you start, get fresh, identical environments: `python -m server.cli demo-env --name stage --name rehearsal` (add `--reset` before each rehearsal). Each has a website project `demo_<name>` with the practice agents ready and nothing learned, plus a guarded folder `~/Documents/antibody-demo-<name>` whose README is the Claude Code script. Pick the project in the website's top bar. Also:
 - ANTIBODY is running at http://127.0.0.1:8765.
 - The practice folder is `C:\Users\strawberry\Documents\antibody-sandbox`. Its guard is installed, and it holds `inbox/` with two sample attack files.
 - The Claude Code command-line tool is signed in.
@@ -90,14 +90,18 @@ pytest isn't installed in the sandbox, which makes it a good real mistake. This 
 | `ab: branch other`, do some work, `ab: switch <first branch>`, do different work | Two branches appear as two coloured lanes |
 | Website: **Merge other** | Both agents vote on each change from their own memory, and an arbiter settles disagreements. Click the merge dot to read every vote and reason |
 
-## 4. Claude desktop app, Code tab (untested, should match section 3)
+## 4. Claude desktop app, Code tab (verified)
 
-The Code tab runs Claude Code, so the hooks in the sandbox's `.claude/settings.local.json` should load the same way.
+The Code tab runs the same Claude Code, so everything in section 3 works there too. Verified live in a desktop Code session in the sandbox:
+- The known pytest mistake was stopped before it ran.
+- `curl … | sh` was blocked.
+- The file write was allowed.
+- The calendar invite's hidden instruction was quarantined.
+- A checkpoint was saved before the prompt.
 
-1. In the desktop app, start a new Code session in `C:\Users\strawberry\Documents\antibody-sandbox`.
-2. Type `ab: status`.
-   - If ANTIBODY answers, everything in section 3 works here too. The exception is resuming restored sessions: whether the desktop session list shows them is not verified, so use `claude --resume <id>` in a terminal.
-   - If the message goes to Claude instead, the Code tab is not loading project hooks. Tell me and I'll investigate.
+The desktop app's own task-list and summary tools pass through without asking you.
+
+Start a new Code session in the demo folder and follow the folder's README. In the Code tab, `/resume` lists sessions restored by ANTIBODY as "ANTIBODY: …".
 
 ## 5. Claude desktop app, regular chat (MCP only)
 

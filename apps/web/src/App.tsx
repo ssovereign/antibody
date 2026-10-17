@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, bootstrap, currentProject, knownProjects, q } from "./api";
+import { api, bootstrap, currentProject, knownProjects, q, signIn } from "./api";
 import { ErrorBox, Loading } from "./ui";
 import Overview from "./views/Overview";
 import Chat from "./views/Chat";
@@ -66,6 +66,8 @@ export default function App() {
     return () => clearInterval(h);
   }, [ready, route[0]]);
 
+  if (err && (err.code === "SIGN_IN_REQUIRED" || err.code === "AUTH_INVALID" || err.code === "SIGN_IN_FAILED"))
+    return <SignIn error={err.code === "SIGN_IN_REQUIRED" ? null : err} />;
   if (err)
     return (
       <div style={{ padding: 30 }}>
@@ -171,3 +173,26 @@ export function Page({ title, actions, children, sub }: { title: React.ReactNode
 }
 
 export { q };
+
+function SignIn({ error }: { error: any }) {
+  const [tok, setTok] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [e, setE] = React.useState<any>(error);
+  const go = () => {
+    setBusy(true);
+    signIn(tok.trim()).then(() => window.location.reload()).catch((x) => { setE(x); setBusy(false); });
+  };
+  return (
+    <div style={{ maxWidth: 460, margin: "12vh auto", padding: "0 16px" }}>
+      <div className="card">
+        <h2>Sign in to ANTIBODY</h2>
+        <p className="small">Paste the access token you were given. Whoever runs this server creates one with{" "}
+          <code>python -m server.cli invite --project &lt;project&gt; --name &lt;you&gt;</code>.</p>
+        <input type="password" autoComplete="off" value={tok} onChange={(x) => setTok(x.target.value)} placeholder="access token"
+               aria-label="Access token" style={{ width: "100%", margin: "8px 0" }} onKeyDown={(x) => { if (x.key === "Enter" && tok.trim()) go(); }} />
+        <button className="primary" onClick={go} disabled={!tok.trim() || busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        {e ? <p className="small" style={{ color: "var(--bad)" }}>{e.message}</p> : null}
+      </div>
+    </div>
+  );
+}

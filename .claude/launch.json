@@ -4,8 +4,20 @@
     {
       "name": "antibody",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "server.cli", "serve"],
+      "runtimeArgs": [
+        "-m",
+        "server.cli",
+        "serve"
+      ],
       "port": 8765
+    },
+    {
+      "name": "antibody-hosted-preview",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "scripts/hosted_preview.py"
+      ],
+      "port": 8790
     }
   ]
 }

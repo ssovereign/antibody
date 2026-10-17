@@ -1,0 +1,9 @@
+.venv
+var
+**/__pycache__
+**/node_modules
+apps/web/dist
+.git
+.claude
+exports
+*.sqlite

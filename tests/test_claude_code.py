@@ -233,3 +233,9 @@ def test_hook_script_end_to_end_and_fail_modes(core, proj):
     assert json.loads(_hook(bash, dead, "t", "closed")[1])["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert _hook(bash, dead, "t", "open") == (0, "")
     assert _hook(read, dead, "t") == (0, "")
+
+
+def test_desktop_app_ui_tools_are_not_held_for_approval(core, proj):
+    assert decision(pre(core, proj, "mcp__ccd_turn__update_plan", {"items": []})) == "allow"
+    assert decision(pre(core, proj, "mcp__ccd_turn__wrap_up", {"recap": "x"})) == "allow"
+    assert decision(pre(core, proj, "mcp__slack__post_message", {"text": "hi"})) == "ask"

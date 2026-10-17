@@ -1,0 +1,21 @@
+# Render blueprint: the ANTIBODY server (with the web app) on one service with a persistent disk.
+# Render → New → Blueprint → pick this repository. Then add ANTHROPIC_API_KEY under Environment.
+services:
+  - type: web
+    name: antibody
+    runtime: docker
+    plan: starter
+    healthCheckPath: /v1/health
+    disk:
+      name: antibody-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PROJECT_AUTH_MODE
+        value: token
+      - key: EXTRA_ALLOWED_HOSTS
+        value: antibody.onrender.com
+      - key: EXTRA_UI_ORIGINS
+        value: https://antibody.vercel.app
+      - key: ANTHROPIC_API_KEY
+        sync: false

@@ -219,11 +219,17 @@ class FailureLearning:
                 "fix": lesson["fix"], "command_regex": lesson["command_regex"], "diagnosed_by": lesson["by"],
                 "diagnosis": f"{lesson['cause']} Fix: {lesson['fix']}", "scope": {"tool": f"cc.{tool}"}, "procedure": {},
                 "environment": {"os": platform.system(), "shell": tool},
+                "conditions": {"agent": agent["name"], "tool": tool, "command matches": lesson["command_regex"]},
+                "negative_cases": ["commands that already worked in this folder", "commands that install the missing piece",
+                                   "a retry marked # antibody:retry"],
                 "examples": [r["command"][:300] for r in rows[-3:]], "evidence_refs": [f"host_failure:{r['failure_id']}" for r in rows]}
         cand = self.core.learning.create_candidate(project_id, "procedure", lesson_id, body, "learner", inc["incident_id"])
         self.core.incidents.update(inc["incident_id"], candidate_id=cand["candidate_id"])
         ev = self.core.learning.evaluate(project_id, cand["candidate_id"], None, "learner")
         accepted = any(l["lesson_id"] == lesson_id for l in self.lessons(project_id, agent, tool))
+        if accepted:  # earlier incidents about the same mistake are now handled by this lesson
+            self.db.execute("UPDATE incidents SET status='resolved' WHERE project_id=? AND category='repeated_failure' AND fingerprint=? AND status='open'",
+                            (project_id, hashlib.sha256(fp.encode()).hexdigest()))
         state = ("learned it: from now on ANTIBODY stops this before it runs" if accepted else
                  "drafted a lesson; accept it in Knowledge to stop repeats" if ev["status"] == "passed" else
                  "could not confirm a safe pattern for it, so it only warns")

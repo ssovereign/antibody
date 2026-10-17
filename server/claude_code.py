@@ -54,6 +54,8 @@ CC_TOOLS = {
 DEFAULT_ALLOWED = ["Bash", "PowerShell", "Write", "Edit", "MultiEdit", "NotebookEdit", "Read", "WebFetch", "WebSearch", "Glob", "Grep",
                    "LS", "Task", "Agent", "TodoWrite", "mcp", "other"]
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+# tools the Claude desktop app gives its Code tab for its own interface (task list, panes, windows): nothing leaves the app
+DESKTOP_UI_TOOLS = ("mcp__ccd_turn__", "mcp__ccd_view__", "mcp__ccd_window__", "mcp__ccd_sidebar__")
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".next", ".cache", ".antibody"}
 MAX_FILES, MAX_FILE_BYTES = 2000, 1_000_000
 MEMORY_PREFIX = "_claude_session/memory/"
@@ -322,6 +324,8 @@ class ClaudeCodeGuard:
                 values[f"email:{e}"] = e
             for h in HOST_RE.findall(cmd)[:5]:
                 values[f"host:{h}"] = h
+        elif key == "mcp" and tool_name.startswith(DESKTOP_UI_TOOLS):
+            ok("desktop_app_ui", "the Claude desktop app's own task list / view / window tools")
         elif key == "mcp":
             leaf = tool_name.split("__")[-1].lower()
             if re.search(r"(send|post|publish|delete|remove|transfer|pay|create|write|update|upload|share|invite)", leaf):
@@ -520,15 +524,26 @@ class ClaudeCodeGuard:
         return changes
 
     def _transcript_path(self, agent: dict, session_id: str | None) -> str | None:
+        """The conversation to save: this session's if it has one; otherwise (a new window opened just to type
+        `ab: save`) the most recent conversation on the current branch, then the most recent one at all."""
+        def has_conversation(p):
+            try:
+                return bool(p) and os.path.exists(p) and '"assistant"' in Path(p).read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                return False
         sid = session_id or agent["config"].get("current_session")
-        row = None
         if sid:
-            row = self.db.one("SELECT transcript_path FROM host_sessions WHERE session_id=? AND transcript_path IS NOT NULL", (sid,))
-        if not row:
-            row = self.db.one("SELECT transcript_path FROM host_sessions WHERE agent_id=? AND transcript_path IS NOT NULL ORDER BY last_seen DESC LIMIT 1",
-                              (agent["agent_id"],))
-        p = row["transcript_path"] if row else None
-        return p if p and os.path.exists(p) else None
+            row = self.db.one("SELECT transcript_path FROM host_sessions WHERE session_id=?", (sid,))
+            if row and has_conversation(row["transcript_path"]):
+                return row["transcript_path"]
+        branch_id = self._branch_id(agent)
+        rows = self.db.all("SELECT h.transcript_path, r.branch_id FROM host_sessions h JOIN runs r ON r.run_id=h.run_id "
+                           "WHERE h.agent_id=? AND h.transcript_path IS NOT NULL ORDER BY h.last_seen DESC LIMIT 30", (agent["agent_id"],))
+        for want_branch in (True, False):
+            for r in rows:
+                if (not want_branch or r["branch_id"] == branch_id) and has_conversation(r["transcript_path"]):
+                    return r["transcript_path"]
+        return None
 
     def sync_workspace(self, agent: dict, branch: dict, include_transcript: bool = False, session_id: str | None = None) -> dict:
         """Mirror the project folder into the branch workspace so status/diff/save see the real files.
@@ -750,7 +765,13 @@ class ClaudeCodeGuard:
         p = Path(self.core.config.SECRETS_PATH)
         s = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
         toks = s.setdefault("claude_code_hook_tokens", {})
-        if project_id not in toks:
+        valid = False
+        if project_id in toks:
+            try:
+                valid = self.core.projects.authenticate(toks[project_id]).get("project_id") == project_id
+            except Exception:
+                valid = False  # e.g. the project was rebuilt; issue a new token
+        if not valid:
             toks[project_id] = self.core.projects.issue_token(project_id, "app", "claude_code_hook")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(s, indent=1), encoding="utf-8")

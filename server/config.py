@@ -41,6 +41,9 @@ class Config:
     MODEL_CONTEXT_LIMIT: int = 32000
     AUDITOR_PROVIDER: str = "rules"  # rules | anthropic
     API_BIND_HOST: str = "127.0.0.1"
+    # hosting: extra host names / browser origins allowed (comma separated in the environment)
+    EXTRA_ALLOWED_HOSTS: list = field(default_factory=list)
+    EXTRA_UI_ORIGINS: list = field(default_factory=list)
     API_PORT: int = 8765
     UI_ORIGIN: str = "http://127.0.0.1:5173"
     PROJECT_AUTH_MODE: str = "local"  # local (loopback bootstrap) | token
@@ -71,6 +74,12 @@ class Config:
     @classmethod
     def from_env(cls, **overrides) -> "Config":
         cfg = cls()
+        data = os.environ.get("ANTIBODY_DATA_DIR")
+        if data:  # hosting: keep all state on one mounted volume
+            d = Path(data)
+            for k, sub in (("DATABASE_PATH", "antibody.sqlite"), ("CHECKPOINT_PATH", "checkpoints.sqlite"), ("OBJECT_STORE_ROOT", "objects"),
+                           ("WORKSPACE_ROOT", "workspaces"), ("OUTBOX_ROOT", "outbox"), ("SECRETS_PATH", "secrets.json")):
+                setattr(cfg, k, str(d / sub))
         for k, v in asdict(cfg).items():
             setattr(cfg, k, _env(k, v))
         for k, v in overrides.items():

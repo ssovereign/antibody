@@ -13,6 +13,10 @@ export class ApiError extends Error {
   }
 }
 
+// Where the API lives. Empty = same origin (local `make dev`, or the single-container deploy).
+// For a separately hosted UI (e.g. Vercel) set VITE_API_BASE=https://your-antibody-server at build time.
+export const API_BASE: string = ((import.meta as any).env?.VITE_API_BASE || "").replace(/\/$/, "");
+
 let token: string | null = null;
 let projectId: string | null = null;
 let projects: string[] = [];
@@ -35,15 +39,66 @@ export function knownProjects(): string[] {
   return projects;
 }
 
+function keep(key: string, value?: string | null): string | null {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable */
+  }
+  return value ?? null;
+}
+
+// Hosted mode: sign in with an access token (from `python -m server.cli invite`).
+export async function signIn(accessToken: string, pid?: string): Promise<{ project_id: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1/session/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: accessToken, project_id: pid || store("ab_project") || undefined }),
+    });
+  } catch {
+    throw new ApiError(0, "NETWORK", `The ANTIBODY server at ${API_BASE || "this address"} is unreachable.`);
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    keep("ab_access_token", null);
+    throw new ApiError(res.status, body?.error?.code || "SIGN_IN_FAILED", body?.error?.message || "That access token was not accepted.");
+  }
+  token = body.token;
+  projectId = body.project_id;
+  projects = body.projects || [];
+  store("ab_project", projectId);
+  keep("ab_access_token", accessToken);
+  return body;
+}
+
+export function signOut() {
+  keep("ab_access_token", null);
+  token = null;
+}
+
 export async function bootstrap(pid?: string): Promise<{ project_id: string }> {
+  const saved = keep("ab_access_token");
+  if (saved) return signIn(saved, pid);
   const wanted = pid || store("ab_project") || undefined;
-  const res = await fetch("/v1/session/bootstrap", {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1/session/bootstrap`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(wanted ? { project_id: wanted } : {}),
   });
+  } catch {
+    throw new ApiError(0, "NETWORK", `The ANTIBODY server at ${API_BASE || "this address"} is unreachable. Is it running?`);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (["BOOTSTRAP_DISABLED", "LOOPBACK_ONLY"].includes(body?.error?.code)) {
+      throw new ApiError(res.status, "SIGN_IN_REQUIRED", "Sign in with your access token.");
+    }
     if (wanted && res.status === 404) return bootstrap(undefined as any);
     throw new ApiError(res.status, body?.error?.code || "BOOTSTRAP_FAILED", body?.error?.message || "Could not start a session.");
   }
@@ -62,7 +117,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   if (opts.idem) headers["Idempotency-Key"] = opts.idem;
   let res: Response;
   try {
-    res = await fetch(path, { method: opts.method || "GET", headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+    res = await fetch(`${API_BASE}${path}`, { method: opts.method || "GET", headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
   } catch (e) {
     throw new ApiError(0, "NETWORK", "The API is unreachable. Check that `make dev` is running.");
   }
@@ -109,7 +164,7 @@ export function streamEvents(
         const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: "text/event-stream" };
         const li = lastId();
         if (li) headers["Last-Event-ID"] = li;
-        const res = await fetch(path, { headers, signal: ctrl.signal });
+        const res = await fetch(`${API_BASE}${path}`, { headers, signal: ctrl.signal });
         if (res.status === 401) token = null;
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
         onState("live");

@@ -24,6 +24,10 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | GET | `/v1/chats/{cid}/messages` | Chat Messages |
 | POST | `/v1/chats/{cid}/messages` | Post Chat |
 | PUT | `/v1/chats/{cid}/permissions` | Chat Permissions |
+| POST | `/v1/claude-code/agents/{agent_id}/command` | Run a history command (restore, switch, merge, branch, save, diff, ...) on the project's current branch. |
+| GET | `/v1/claude-code/agents/{agent_id}/tree` | Branches and checkpoints of one Claude Code project, for the history graph. |
+| GET | `/v1/claude-code/agents/{agent_id}/versions/{version_id}` | Cc Version |
+| PUT | `/v1/claude-code/settings` | Cc Settings |
 | POST | `/v1/commands` | Git-style version history command for one agent (same commands as chat's /commands). |
 | GET | `/v1/compare` | Compare |
 | GET | `/v1/decisions/{decision_id}` | Get Decision |
@@ -77,6 +81,7 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | POST | `/v1/runs/{run_id}/pause` | Pause Run |
 | POST | `/v1/runs/{run_id}/resume` | Resume Run |
 | POST | `/v1/session/bootstrap` | Local mode only: hands the UI an app-scoped token for one project. Loopback clients only. |
+| POST | `/v1/session/login` | Hosted (token) mode: the UI signs in with an access token from `python -m server.cli invite`. |
 | GET | `/v1/settings` | Settings |
 | POST | `/v1/sources` | Import Source |
 | GET | `/v1/sources` | List Sources |

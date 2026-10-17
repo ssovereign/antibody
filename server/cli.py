@@ -8,6 +8,8 @@
   python -m server.cli backup DIR | restore-backup DIR
   python -m server.cli gc [--apply]
   python -m server.cli claude-code-install --project-dir DIR [--project P] [--uninstall]
+  python -m server.cli demo-env --name stage [--name rehearsal] [--reset]
+  python -m server.cli invite --project demo_stage --name alice
 """
 from __future__ import annotations
 
@@ -174,6 +176,29 @@ def cmd_claude_code(a) -> None:
         core.close()
 
 
+def cmd_invite(a) -> None:
+    """Give someone access to a hosted ANTIBODY: an app token for one project (they paste it on the sign-in screen)."""
+    core = _core(start_workers=False, recover=False)
+    try:
+        core.projects.get_project(a.project)
+        tok = core.projects.issue_token(a.project, "app", f"user:{a.name}")
+        print(json.dumps({"project_id": a.project, "for": a.name, "access_token": tok,
+                          "note": "Share privately. Revoke by deleting it from the tokens table (or rotate with a new invite)."}, indent=1))
+    finally:
+        core.close()
+
+
+def cmd_demo_env(a) -> None:
+    from . import demo_env
+    core = _core(start_workers=False, recover=False)
+    try:
+        for name in a.name:
+            res = demo_env.create(core, name, a.dir if len(a.name) == 1 else None, a.reset, sys.executable)
+            print(json.dumps(res, indent=1))
+    finally:
+        core.close()
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="antibody")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -203,6 +228,15 @@ def main(argv=None) -> None:
     cc.add_argument("--project", default="proj_demo")
     cc.add_argument("--uninstall", action="store_true")
     cc.set_defaults(fn=cmd_claude_code)
+    iv = sub.add_parser("invite", help="access token for one person and project (hosted mode)")
+    iv.add_argument("--project", required=True)
+    iv.add_argument("--name", required=True)
+    iv.set_defaults(fn=cmd_invite)
+    de = sub.add_parser("demo-env", help="fresh, identical demo environments (project + guarded folder)")
+    de.add_argument("--name", action="append", required=True, help="repeat for several identical environments")
+    de.add_argument("--dir", help="folder (default ~/Documents/antibody-demo-<name>)")
+    de.add_argument("--reset", action="store_true", help="rebuild from scratch")
+    de.set_defaults(fn=cmd_demo_env)
     a = ap.parse_args(argv)
     a.fn(a)
 

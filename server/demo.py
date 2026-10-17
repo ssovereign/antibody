@@ -225,6 +225,10 @@ def reset(core, pid: str = PID) -> None:
         cx.execute("DELETE FROM health_transitions WHERE run_id IN (SELECT run_id FROM runs WHERE project_id=?)", (pid,))
         cx.execute("DELETE FROM source_exclusions WHERE source_id IN (SELECT source_id FROM sources WHERE project_id=?)", (pid,))
         cx.execute("DELETE FROM chunks WHERE source_id IN (SELECT source_id FROM sources WHERE project_id=?)", (pid,))
+        cx.execute("DELETE FROM host_tool_calls WHERE run_id IN (SELECT run_id FROM runs WHERE project_id=?)", (pid,))
+        cx.execute("DELETE FROM chat_messages WHERE conversation_id IN (SELECT conversation_id FROM conversations WHERE project_id=?)", (pid,))
+        for t in ("host_sessions", "host_failures", "conversations"):
+            cx.execute(f"DELETE FROM {t} WHERE project_id=?", (pid,))
         for t in tables:
             cx.execute(f"DELETE FROM {t} WHERE project_id=?", (pid,))
         cx.execute("DELETE FROM runs WHERE project_id=?", (pid,))

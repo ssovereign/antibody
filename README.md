@@ -8,6 +8,9 @@ This repository implements the local developer application described in [`docs/A
 
 ## Quick start
 
+New here? [`docs/ONBOARDING.md`](docs/ONBOARDING.md) gets you running in about ten minutes. To demo, see [`docs/DEMO.md`](docs/DEMO.md). To host, see [`docs/HOSTING.md`](docs/HOSTING.md).
+
+
 Requirements: Python 3.12 (3.11+), Node 18+ for the web client, and `make` (optional; every target has a plain command).
 
 ```bash
