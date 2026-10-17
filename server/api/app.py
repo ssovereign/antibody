@@ -788,7 +788,8 @@ def create_app(core: Core | None = None) -> FastAPI:
                                  "JOIN runs r ON r.run_id=h.run_id WHERE r.agent_id=?", (a["agent_id"],))
             rows.append({"agent_id": a["agent_id"], "name": a["name"], "project_dir": pdir, "installed": installed, "last_session": last,
                          "calls": counts["n"] or 0, "denied": counts["denied"] or 0, "asked": counts["asked"] or 0})
-        return {"projects": rows, "python": sys.executable}
+        settings = core.projects.get_project(project_id)["settings"]
+        return {"projects": rows, "python": sys.executable, "auto_accept": settings.get("claude_code_auto_accept", True)}
 
     @app.post("/v1/integrations/claude-code/install")
     def claude_code_install(body: dict = Body(...), p=Depends(principal)):
@@ -799,6 +800,63 @@ def create_app(core: Core | None = None) -> FastAPI:
     def claude_code_uninstall(body: dict = Body(...), p=Depends(principal)):
         need(p, body.get("project_id"), "app", "operator")
         return core.claude_code.uninstall(body["project_dir"])
+
+    # ------------------------------------------------------------ Claude Code history tree (website)
+    def _cc_agent(agent_id: str, p, *roles):
+        a = core.coordinator.agent(agent_id)
+        need(p, a["project_id"], *(roles or ("app", "operator")))
+        if a["adapter"] != "claude_code_hooks":
+            raise InvalidRequest("NOT_CLAUDE_CODE", "this agent is not a Claude Code project")
+        return a
+
+    @app.get("/v1/claude-code/agents/{agent_id}/tree")
+    def cc_tree(agent_id: str, p=Depends(principal)):
+        """Branches and checkpoints of one Claude Code project, for the history graph."""
+        from .. import cc_state as ccs
+        a = _cc_agent(agent_id, p)
+        cur = core.claude_code._branch_id(a)
+        branches = [{k: b[k] for k in ("branch_id", "name", "parent_branch_id", "base_version", "head_version", "purpose", "created_at")}
+                    for b in core.versions.branches(a["project_id"], agent_id)]
+        versions = []
+        for v in core.db.all("SELECT v.version_id, v.branch_id, v.parents_json, v.label, v.created_at, v.manifest_ref FROM versions v "
+                             "JOIN branches b ON b.branch_id=v.branch_id WHERE b.agent_id=? ORDER BY v.created_at", (agent_id,)):
+            man = core.objects.get_json(a["project_id"], v["manifest_ref"])
+            files = core.objects.get_json(a["project_id"], man["artifact_tree_ref"])["files"]
+            versions.append({"version_id": v["version_id"], "branch_id": v["branch_id"], "parents": json.loads(v["parents_json"]),
+                             "label": v["label"], "created_at": v["created_at"], "has_conversation": ccs.META in files,
+                             "is_merge": ccs.MERGE_RECORD in files,
+                             "files": sum(1 for k in files if not k.startswith("_claude_session/"))})
+        lessons = [{"ref": l["ref"], "summary": l["body"]["summary"], "fix": l["body"]["fix"], "tool": l["body"].get("tool")}
+                   for l in core.cc_learning.lessons(a["project_id"], a)]
+        failures = core.db.scalar("SELECT COUNT(*) FROM host_failures WHERE agent_id=?", (agent_id,))
+        prevented = core.db.scalar("SELECT COUNT(*) FROM lesson_uses u JOIN runs r ON r.run_id=u.run_id WHERE r.agent_id=? AND u.use_kind='prevented_failure'", (agent_id,))
+        return {"agent": {"agent_id": agent_id, "name": a["name"], "project_dir": a["config"]["project_dir"]}, "current_branch_id": cur,
+                "branches": branches, "versions": versions, "lessons": lessons, "failures_seen": failures, "failures_prevented": prevented}
+
+    @app.get("/v1/claude-code/agents/{agent_id}/versions/{version_id}")
+    def cc_version(agent_id: str, version_id: str, p=Depends(principal)):
+        from .. import cc_state as ccs
+        a = _cc_agent(agent_id, p)
+        v = core.versions.version(version_id)
+        files = core.versions.manifest_state(a["project_id"], v["manifest"])["files"]
+        ch, meta = core.claude_code.state_chain(a["project_id"], version_id)
+        record = json.loads(core.objects.get(a["project_id"], files[ccs.MERGE_RECORD]["blob"])) if ccs.MERGE_RECORD in files else None
+        return {"version_id": version_id, "label": core.db.scalar("SELECT label FROM versions WHERE version_id=?", (version_id,)),
+                "conversation": ccs.summarize(ch, 30), "messages": len(ch),
+                "files": sorted(k for k in files if not k.startswith("_claude_session/")),
+                "memory": sorted(k[len("_claude_session/memory/"):] for k in files if k.startswith("_claude_session/memory/")),
+                "merge_record": record}
+
+    @app.post("/v1/claude-code/agents/{agent_id}/command")
+    def cc_command(agent_id: str, body: dict = Body(...), p=Depends(principal)):
+        """Run a history command (restore, switch, merge, branch, save, diff, ...) on the project's current branch."""
+        a = _cc_agent(agent_id, p, "app")
+        return core.commands.run(a["project_id"], agent_id, core.claude_code._branch_id(a), str(body.get("line", "")), p["actor_id"])
+
+    @app.put("/v1/claude-code/settings")
+    def cc_settings(body: dict = Body(...), p=Depends(principal)):
+        need(p, body.get("project_id"), "app", "operator")
+        return core.projects.update_settings(body["project_id"], {"claude_code_auto_accept": bool(body.get("auto_accept", True))}, p["actor_id"])["settings"]
 
     # ------------------------------------------------------------ chat
     @app.get("/v1/chats")

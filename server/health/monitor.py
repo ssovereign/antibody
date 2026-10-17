@@ -109,6 +109,8 @@ class HealthMonitor:
         if view.reason_code == "DEDUPLICATED":
             return
         host = run["adapter"] in ("claude_code_hooks",)
+        if view.reason_code == "KNOWN_FAILURE":
+            return  # a learned lesson saved a wasted attempt; recorded as a lesson use, not an incident
         if host and view.outcome == "PAUSE":
             return  # the host asks its user to confirm; the session keeps going
         if view.outcome == "PAUSE":

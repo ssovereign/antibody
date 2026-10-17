@@ -96,6 +96,12 @@ export function GuardClaudeCode() {
       <p className="small muted">Writes <code>.claude/settings.local.json</code> in that folder (your existing settings are kept). Not allowed for the
         ANTIBODY folder itself. ANTIBODY must be running (<code>make dev</code>); if it is not, changing calls ask you first.</p>
       {result ? <p className="small"><Badge kind="ok">installed</Badge> {result.agent.name}. {result.next}</p> : null}
+      <label className="check" style={{ margin: "8px 0" }}>
+        <input type="checkbox" checked={!!s.data.auto_accept}
+               onChange={(e) => run("aa", () => api(`/v1/claude-code/settings`, { method: "PUT", body: { project_id: pid, auto_accept: e.target.checked } }).then(s.reload), "Saved")} />
+        Learn from repeated failed commands automatically (otherwise lessons wait for you in Knowledge)
+      </label>
+      <p className="small muted">History, restore and merge for these folders: <a href="#/claude-code">Claude Code history</a>.</p>
       {s.data.projects.length ? (
         <table><thead><tr><th>Folder</th><th>Hooks</th><th>Calls checked</th><th>Last session</th><th></th></tr></thead><tbody>
           {s.data.projects.map((x: any) => (

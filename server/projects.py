@@ -134,7 +134,7 @@ class ProjectService:
 
     def update_settings(self, project_id: str, changes: dict, actor: str) -> dict:
         p = self.get_project(project_id)
-        allowed = {"auto_promote_enabled", "auto_promote_classes", "registry_refresh"}
+        allowed = {"auto_promote_enabled", "auto_promote_classes", "registry_refresh", "claude_code_auto_accept"}
         bad = set(changes) - allowed
         if bad:
             raise InvalidRequest("SETTING_NOT_EDITABLE", f"not editable: {sorted(bad)}")

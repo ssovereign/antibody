@@ -28,6 +28,7 @@ REASON_CODES = {
     "DATA_CLASS_NOT_AUTHORIZED": "This content is not approved for this destination.",
     "UNSUPPORTED_ACTION": "The available evidence does not support this action.",
     "KNOWN_PATTERN": "The action depends on content matching an accepted threat pattern.",
+    "KNOWN_FAILURE": "This command would fail the same way it has failed here before (learned lesson).",
     "BUDGET_EXCEEDED": "The run exhausted an authorized budget.",
     "STALE_REVISION": "The task or policy changed since this run started; re-authorize first.",
     "OUTCOME_UNKNOWN": "A previous effect has an unknown outcome; reconcile before continuing.",

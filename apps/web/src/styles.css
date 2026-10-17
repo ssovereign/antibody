@@ -178,3 +178,12 @@ ul.facts, ul.hyp { padding-left: 0; }
 .perm-grid h3 { margin-top: 0; }
 .perm-sources { max-height: 220px; overflow-y: auto; }
 .perm-box { background: var(--surface-2); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+
+/* Claude Code history graph */
+.graph-row { display: flex; align-items: center; gap: 8px; background: none; border: 0; border-radius: 6px; text-align: left; color: var(--ink); cursor: pointer; font: inherit; }
+.graph-row:hover { background: var(--accent-soft); }
+.graph-row[aria-pressed="true"] { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.graph-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
+.convo { max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.convo p { margin: 4px 0; }
+.convo p.you { font-weight: 600; }

@@ -176,13 +176,16 @@ class LearningService:
         if cand["status"] == "Rejected":
             raise ConflictError("REJECTED", "revise the candidate (new revision) before re-evaluating")
         self._set_status(cand, "Testing")
-        ev = self.core.evaluator.evaluate_candidate(project_id, cand, suite_ref, actor)
+        host = cand["body"].get("host") == "claude_code"
+        ev = (self.core.cc_learning.evaluate(project_id, cand, actor) if host
+              else self.core.evaluator.evaluate_candidate(project_id, cand, suite_ref, actor))
         if ev["status"] != "passed":
             self._set_status(cand, "Rejected")
         else:
             settings = self.core.projects.get_project(project_id)["settings"]
             cls = f"{cand['kind']}:{cand['body'].get('scope', {}).get('tool', '*')}"
-            if settings.get("auto_promote_enabled") and (cls in settings.get("auto_promote_classes", []) or cls in self.core.config.AUTO_PROMOTE_CLASSES):
+            if (host and settings.get("claude_code_auto_accept", True)) or (settings.get("auto_promote_enabled") and (
+                    cls in settings.get("auto_promote_classes", []) or cls in self.core.config.AUTO_PROMOTE_CLASSES)):
                 try:
                     self.promote(project_id, candidate_id, None, None, None, "automatic", "auto_promotion")
                 except ConflictError:

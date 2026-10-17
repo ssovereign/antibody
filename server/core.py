@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .chat import ChatService
 from .claude import ClaudeConnection
+from .cc_learning import FailureLearning
 from .claude_code import ClaudeCodeGuard
 from .commands import Commands
 from .config import Config
@@ -57,6 +58,7 @@ class Core:
         self.chat = ChatService(self)
         self.commands = Commands(self)
         self.claude_code = ClaudeCodeGuard(self)
+        self.cc_learning = FailureLearning(self)
         self.refresh_auditor()
         self.worker_identity = {"role": "worker", "actor_id": "worker:local", "project_id": None}
         self.propagate_runtime_errors = False
@@ -81,7 +83,9 @@ class Core:
             impl = ClaudeAuditor(self.claude)
         else:
             impl = RulesAuditor()
-        self.auditor = AuditRunner(impl, self.config.GUARD_TIMEOUT_SECONDS)
+        # a real model call needs more time than the rules; still well inside Claude Code's 30-second hook limit
+        timeout = max(self.config.GUARD_TIMEOUT_SECONDS, 20.0) if isinstance(impl, ClaudeAuditor) else self.config.GUARD_TIMEOUT_SECONDS
+        self.auditor = AuditRunner(impl, timeout)
         if hasattr(self, "gateway"):
             self.gateway.auditor = self.auditor
         return impl.name
