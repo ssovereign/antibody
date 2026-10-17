@@ -9,7 +9,7 @@ endif
 .PHONY: setup dev test test-security eval demo demo-reset export lock smoke gc backup
 
 setup:          ## install pinned dependencies, build the UI, migrate
-	python scripts/setup.py
+	$(if $(wildcard $(PY)),$(PY),python) scripts/setup.py
 
 dev:            ## start API + worker pool and the web client (loopback only)
 	$(PY) scripts/dev.py

@@ -32,6 +32,7 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | GET | `/v1/health` | Health |
 | GET | `/v1/incidents` | List Incidents |
 | GET | `/v1/incidents/{incident_id}` | Get Incident |
+| POST | `/v1/incidents/{incident_id}/counterfactual` | Controlled attribution: rerun in sandboxes with only the linked spans masked (bounded repeats). |
 | GET | `/v1/jobs` | Jobs |
 | GET | `/v1/jobs/{job_id}` | Job |
 | GET | `/v1/lessons` | Lessons |

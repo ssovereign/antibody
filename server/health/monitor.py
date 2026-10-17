@@ -109,6 +109,8 @@ class HealthMonitor:
         if view.reason_code == "DEDUPLICATED":
             return
         if view.outcome == "PAUSE":
+            if view.reason_code == "RUN_NOT_ACTIVE":
+                return  # the run is already stopped; keep its recorded reason
             if view.reason_code == "OUTCOME_UNKNOWN":
                 if run["health"] != "Unknown":
                     self.transition(run["run_id"], "Unknown", "OUTCOME_UNKNOWN", {"operation_id": view.operation_id})
@@ -119,8 +121,11 @@ class HealthMonitor:
             return
         # DENY: an authorization violation. The action never executes.
         anchored = [r for r in view.evidence_refs if ":chunk_" in r]
+        invocations = self.db.scalar("SELECT COUNT(*) FROM executor_invocations WHERE decision_id=?", (view.decision_id,))
         observed = [{"fact": "action denied before execution", "decision_id": view.decision_id, "reason_code": view.reason_code,
-                     "executor_invoked": False}]
+                     "executor_invoked": False},
+                    {"fact": f"executor ledger shows {invocations} invocations for this decision", "level": "verified_outcome",
+                     "executor_invocations": invocations}]
         hyps = []
         if anchored:
             hyps.append({"status": "suspected", "text": "Content in the linked source may have influenced the action arguments. Exposure and argument overlap are recorded; causal role is not verified.",

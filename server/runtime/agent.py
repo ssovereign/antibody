@@ -115,6 +115,11 @@ class ReferenceAgent:
                                   "lessons": [l["ref"] for l in packet["lessons"]], "observations": len(packet["observations"]),
                                   "omitted": packet["omitted"][:30], "pressure": packet.get("pressure", False)},
                                  actor_type="runtime", registry_revision=run["registry_revision"])
+        if packet.get("conflicts") and not self.db.scalar("SELECT 1 FROM incidents WHERE run_id=? AND category='lesson_conflict'", (run["run_id"],)):
+            self.core.incidents.open(run, "lesson_conflict", "medium",
+                                     [{"fact": f"{c['ref']} conflicts with {c['conflicts_with']}"} for c in packet["conflicts"]],
+                                     [f"lesson:{c['ref']}" for c in packet["conflicts"]],
+                                     [{"status": "hypothesized", "text": "Applicability of one of the lessons may be too broad; revise its conditions or revoke it."}])
         if not packet["fits"]:
             coord.set_status(run["run_id"], "paused", "CONTEXT_BUDGET")
             self.core.health.transition(run["run_id"], "Paused", "CONTEXT_BUDGET", {"reason": packet.get("reason")})
@@ -155,6 +160,8 @@ class ReferenceAgent:
                                  {"call_id": call_id, "provider": planner.provider, "model_id": planner.model_id, "finish": out.finish,
                                   "tool_id": out.tool_id, "rationale": out.rationale, "input_tokens": in_tok, "output_tokens": out_tok,
                                   "count_kind": out.count_kind, "packet_id": packet["packet_id"]}, actor_type="model")
+        if self._run(state)["status"] != "running":  # e.g. the run cost budget tripped on this call
+            return {"next_phase": "stop", "stop_reason": self._run(state)["status_reason"], "progress": progress}
         if out.finish:
             coord.finish(run, out.rationale, progress)
             return {"next_phase": "stop", "stop_reason": "finished", "progress": progress}

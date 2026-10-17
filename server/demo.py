@@ -81,6 +81,8 @@ def seed(core, pid: str = PID) -> dict:
        tools=("read_source", "write_report", "send_report"), recipients=("finance_team",), out="reports/vendor summary.md")
     r3 = c.coordinator.start_run(pid, a["agent_id"], "task_vendor_report", wait=True)
     inc2 = [i for i in c.incidents.list(pid) if i["category"] == "blocked_action"][0]
+    cf = c.attribution.counterfactual(inc2["incident_id"], repeats=2)
+    log(f"  controlled attribution: {cf['conclusion']} (reproduced with original: {cf['reproduced_with_original']}, absent when masked: {cf['absent_when_masked']})")
     ev2 = c.learning.evaluate(pid, inc2["candidate_id"], None, "user:demo")
     log(f"  pattern evaluation {ev2['evaluation_id']}: {ev2['status']}")
     p2 = c.learning.promote(pid, inc2["candidate_id"], None, a["accepted_branch_id"], None, "assisted", "user:demo")

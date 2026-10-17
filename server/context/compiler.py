@@ -133,6 +133,24 @@ class ContextCompiler:
             if ref in revoked or f"{ref.split('@')[0]}@*" in revoked:
                 omitted.append({"ref": ref, "reason": "pinned in manifest but globally revoked"})
         candidates.sort(key=lambda x: (-x[0], x[1]["ref"]))
+        # typed conflict detection: two applicable procedures setting the same parameter differently
+        conflicts, seen_params, kept = [], {}, []
+        for score, l in candidates:
+            clash = None
+            if l["kind"] == "procedure":
+                for param, val in (l["body"].get("procedure") or {}).items():
+                    key = (l["body"].get("scope", {}).get("tool"), param)
+                    if key in seen_params and seen_params[key][1] != val:
+                        clash = seen_params[key][0]
+                    else:
+                        seen_params.setdefault(key, (l["ref"], val))
+            if clash:
+                conflicts.append({"ref": l["ref"], "conflicts_with": clash})
+                omitted.append({"ref": l["ref"], "reason": f"conflicts with {clash}; opened for review, not silently merged"})
+            else:
+                kept.append((score, l))
+        candidates = kept
+        packet["conflicts"] = conflicts
         for _, l in candidates[: self.config.MAX_LESSONS_IN_CONTEXT]:
             entry = {"ref": l["ref"], "kind": l["kind"], "summary": l["body"].get("summary") or l["body"].get("expected_improvement", ""),
                      "scope": l["body"].get("scope", {}), "conditions": l["body"].get("conditions", {}),

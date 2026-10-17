@@ -335,7 +335,23 @@ class Coordinator:
         cost["input_tokens"] = cost.get("input_tokens", 0) + (in_tok or 0)
         cost["output_tokens"] = cost.get("output_tokens", 0) + (out_tok or 0)
         cost["count_kind"] = kind if cost.get("count_kind") in (None, kind) else "mixed"
+        cfg = loads(run["start_config_json"])
+        price = _price(self.config.PRICE_CONFIG_PATH, cfg.get("model", {}).get("model_id", ""))
+        if price is not None:
+            from decimal import Decimal
+            usd = (Decimal(cost["input_tokens"]) * Decimal(price["input_per_mtok"]) + Decimal(cost["output_tokens"]) * Decimal(price["output_per_mtok"])) / Decimal(1_000_000)
+            cost["estimated_cost"] = str(usd.quantize(Decimal("0.000001")))
+            cost["price_source"] = "fixtures/price_config.json"
+        else:
+            cost["estimated_cost"] = None
+            cost["price_source"] = "not measured (no saved price for this model)"
         self.db.execute("UPDATE runs SET cost_json=?, steps=steps+1 WHERE run_id=?", (dumps(cost), run_id))
+        limit = cfg.get("limits", {}).get("max_run_cost")
+        if cost.get("estimated_cost") is not None and limit is not None:
+            from decimal import Decimal
+            if Decimal(cost["estimated_cost"]) > Decimal(str(limit)) and run["status"] == "running":
+                self.core.health.transition(run_id, "Paused", "BUDGET_EXCEEDED", {"estimated_cost": cost["estimated_cost"], "limit": str(limit)})
+                self.set_status(run_id, "paused", "BUDGET_EXCEEDED")
 
     # ================================================================ operations
     def issue_operation(self, run: dict, purpose: str) -> tuple[str, str]:
@@ -659,6 +675,16 @@ class Coordinator:
             fixed["runs_paused"] += 1
         self.db.execute("UPDATE branches SET barrier=0 WHERE barrier=1")
         return fixed
+
+
+def _price(path: str, model_id: str) -> dict | None:
+    import json
+    from pathlib import Path
+    try:
+        cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return cfg.get("models", {}).get(model_id)
 
 
 def _canon(v):

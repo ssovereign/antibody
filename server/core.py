@@ -14,6 +14,7 @@ from .ingress.pipeline import SourceService
 from .jobs import JobQueue
 from .journal import Journal
 from .learning.service import LearningService
+from .learning.attribution import Attribution
 from .projects import ProjectService
 from .registry.registry import Registry
 from .runtime.agent import ReferenceAgent
@@ -43,6 +44,7 @@ class Core:
         self.effects = EffectService(self)
         self.learning = LearningService(self)
         self.evaluator = Evaluator(self)
+        self.attribution = Attribution(self)
         self.jobs = JobQueue(self)
         self.coordinator = Coordinator(self)
         self.gateway = Gateway(self)

@@ -77,6 +77,14 @@ function IncidentDetail({ id, onChange }: { id: string; onChange: () => void }) 
           <p><Status value={x.outcome} /> {x.message} <span className="muted small">({x.executor_invocations} executor invocations)</span></p>
         </div>
       ))}
+      {inc.category === "blocked_action" ? (
+        <div className="row" style={{ margin: "6px 0" }}>
+          <Btn onClick={() => run("cf", () => api(`/v1/incidents/${inc.incident_id}/counterfactual`, { method: "POST", body: { repeats: 2 } }).then(() => { d.reload(); onChange(); }),
+                 "Controlled reruns finished; see hypotheses")} busy={busy === "cf"}
+               disabledReason={inc.attribution_level === "intervention_supported" ? "Already intervention supported" : null}
+               title="Rerun in sandboxes with only the linked spans masked; side effects stay sandboxed">Run controlled attribution</Btn>
+        </div>
+      ) : null}
       {evidence.chunks.length ? <h3>Linked sources</h3> : null}
       {evidence.chunks.map((c: any) => (
         <div key={c.ref}>

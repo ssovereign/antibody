@@ -61,10 +61,14 @@ class Registry:
         for r in rows:
             latest[r["lesson_id"]] = r  # highest revision accepted by at_revision supersedes earlier ones
         out = []
+        now = utcnow()
         for r in latest.values():
             if self.is_revoked(project_id, r["lesson_id"], r["revision"]):
                 continue
-            out.append(_lesson(r))
+            l = _lesson(r)
+            if l["body"].get("expires_at") and l["body"]["expires_at"] <= now:
+                continue  # expired records stop being retrieved; revalidate to renew
+            out.append(l)
         return out
 
     def all_lessons(self, project_id: str) -> list[dict]:

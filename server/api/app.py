@@ -531,6 +531,18 @@ def create_app(core: Core | None = None) -> FastAPI:
         return {"incident": inc, "evidence": ev, "candidate": cand, "recovery_run": rec,
                 "presentation": {"facts": inc["observed"], "hypotheses": inc["hypotheses"], "attribution_level": inc["attribution_level"]}}
 
+    @app.post("/v1/incidents/{incident_id}/counterfactual")
+    def counterfactual(incident_id: str, body: dict = Body(default={}), p=Depends(principal)):
+        """Controlled attribution: rerun in sandboxes with only the linked spans masked (bounded repeats)."""
+        inc = core.incidents.get(incident_id)
+        if not inc:
+            raise NotFound("incident")
+        need(p, inc["project_id"], "app")
+        try:
+            return core.attribution.counterfactual(incident_id, int(body.get("repeats", 2)))
+        except ValueError as e:
+            raise InvalidRequest("NOT_APPLICABLE", str(e))
+
     @app.get("/v1/candidates")
     def list_candidates(project_id: str, status: str | None = None, p=Depends(principal)):
         need(p, project_id, "app", "operator")
