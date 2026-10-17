@@ -1,5 +1,7 @@
 # ANTIBODY
 
+> **Judges / first-time visitors:** read [`JUDGES.md`](JUDGES.md). Double-click `start-antibody` and you're running in about two minutes.
+
 ANTIBODY is a protected workspace for AI agents. It checks every tool action before it runs, treats outside content as data, watches run health, learns tested fixes, shares accepted knowledge between agents, and keeps a Git-like history of agent state. **RECEIPT** is the version-history subsystem: save, branch, compare, keep selected changes, and restore without repeating external actions.
 
 This repository implements the local developer application described in [`docs/ANTIBODY_Technical_Design.md`](docs/ANTIBODY_Technical_Design.md): a FastAPI service with a bounded worker pool, SQLite (WAL) storage plus a content-addressed object store, a LangGraph reference agent with a persistent checkpointer, an MCP tool proxy, and a React web client.
@@ -8,7 +10,7 @@ This repository implements the local developer application described in [`docs/A
 
 ## Quick start
 
-New here? [`docs/ONBOARDING.md`](docs/ONBOARDING.md) gets you running in about ten minutes. To demo, see [`docs/DEMO.md`](docs/DEMO.md). To host, see [`docs/HOSTING.md`](docs/HOSTING.md).
+Developers: the website is committed prebuilt in `apps/web/dist` (so the launcher needs no Node); after changing `apps/web/src`, run `npm run build` in `apps/web` and commit `dist` too. New here? [`docs/ONBOARDING.md`](docs/ONBOARDING.md) gets you running in about ten minutes. To demo, see [`docs/DEMO.md`](docs/DEMO.md). To host, see [`docs/HOSTING.md`](docs/HOSTING.md).
 
 
 Requirements: Python 3.12 (3.11+), Node 18+ for the web client, and `make` (optional; every target has a plain command).
