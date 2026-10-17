@@ -13,9 +13,11 @@ services:
     envVars:
       - key: PROJECT_AUTH_MODE
         value: token
+      # behind Render's proxy with token sign-in, any host name is fine (the host check protects local installs)
       - key: EXTRA_ALLOWED_HOSTS
-        value: antibody.onrender.com
+        value: "*"
+      # your Vercel site's address, once you have it (only needed if the website is hosted on Vercel)
       - key: EXTRA_UI_ORIGINS
-        value: https://antibody.vercel.app
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
