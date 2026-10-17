@@ -4,7 +4,7 @@ ANTIBODY is a protected workspace for AI agents. It checks every tool action bef
 
 This repository implements the local developer application described in [`docs/ANTIBODY_Technical_Design.md`](docs/ANTIBODY_Technical_Design.md): a FastAPI service with a bounded worker pool, SQLite (WAL) storage plus a content-addressed object store, a LangGraph reference agent with a persistent checkpointer, an MCP tool proxy, and a React web client.
 
-> **Honest labels.** No model API key was available while this was built. Agent runs therefore use a deterministic reference planner and are labeled **simulated**. One replayed trace is labeled **recorded**. The gateway, journal, executors, checks, learning, registry, evaluation and version operations all run real code against synthetic fixtures. Set `MODEL_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` to run a live Claude planner (implemented, not exercised here).
+> **Honest labels.** No model API key was available while this was built. The demo's agent runs therefore use a deterministic reference planner and are labeled **simulated**. The live Claude integration (chat, Claude planner, Claude auditor) is built and tested against a scripted fake of the Messages API through the real SDK, but has not yet talked to the real API. One replayed trace is labeled **recorded**. The gateway, journal, executors, checks, learning, registry, evaluation and version operations all run real code against synthetic fixtures. Set `MODEL_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` to run a live Claude planner (implemented, not exercised here).
 
 ## Quick start
 
@@ -33,6 +33,25 @@ Then open http://127.0.0.1:8765 (built UI) or http://127.0.0.1:5173 (hot reload)
 | `make export` | manifests, traces and result summary → `exports/` | `python -m server.cli export` |
 
 Other commands: `python -m server.cli backup DIR`, `restore-backup DIR`, and `gc [--apply]` (garbage collection plus raw-evidence retention purge). `python -m server.runtime.mcp_proxy --project P --agent A --task T --server S` runs the stdio MCP proxy.
+
+## Chat with Claude, Git-style commands, and Claude Code
+
+**Connect Claude.** Open *Settings → Connect Claude* and paste an Anthropic API key, or set `ANTHROPIC_API_KEY` before `make dev`. The key stays on the server (`var/secrets.json`) and is never sent back to the browser. Defaults: `claude-opus-5-5`, effort `medium`, refusal fallbacks on. Runs that use Claude are labeled **live**.
+
+**Chat** (menu → Chat). Each conversation has a standing assignment: you tick what the agent may do (tools, recipients, documents, web) once, and every message runs inside those limits. Each message becomes a run of the agent on the conversation's current branch. Claude's tool calls go through the gateway one at a time, tool results come back to Claude with quarantined text removed, and a block is reported to Claude so it can explain it. After a blocked action anchored in outside content, the thread is rebuilt from trusted state rather than replaying the hostile text.
+
+**Git-style commands** work in chat (start with `/`) and in the terminal:
+
+```bash
+bin/antibody use "Claude assistant"
+```
+```bash
+bin/antibody status
+```
+
+Commands: `status`, `log`, `save "msg"`, `diff [a] [b]`, `branch [name] [from ref]`, `switch`, `restore <ref>`, `merge <branch> [keys|all]`, `remember`, `forget`, `lessons`, `disable`, `revoke`, `runs`, `effects`. Refs: `HEAD`, `HEAD~1`, a branch name, a version id prefix, or a label. `bin/antibody chat --new "title" "message"` chats from the terminal.
+
+**Claude Code / Claude Desktop over MCP.** *Settings → Connect Claude Code* shows a ready-made `claude mcp add …` command and `.mcp.json` block. They run `scripts/mcp_serve.py`, which serves ANTIBODY's tools limited to the `mcp_tools` assignment. Every call is checked and recorded as a run of the "Claude Code (via MCP)" agent. Only tools reached through ANTIBODY are protected; the host's own built-in tools are not.
 
 ## What the demo shows
 

@@ -150,3 +150,31 @@ ul.facts, ul.hyp { padding-left: 0; }
 .toast { position: fixed; bottom: 16px; right: 16px; background: var(--ink); color: var(--surface); padding: 10px 14px; border-radius: 8px; font-size: 13px; max-width: 420px; z-index: 10; }
 .toast.err { background: var(--bad); color: #fff; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* chat */
+.chat-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .chat-layout { grid-template-columns: 1fr; } }
+.chat-list { display: flex; flex-direction: column; gap: 4px; }
+.chat-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+.chat-item:hover { background: var(--surface-2); text-decoration: none; }
+.chat-item.on { background: var(--accent-soft); }
+.chat-main { display: flex; flex-direction: column; overflow: visible; }
+.chat-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
+.chat-scroll { display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 330px); min-height: 240px; overflow-y: auto; padding: 4px 2px 8px; }
+.msg { max-width: 760px; border-radius: 10px; padding: 10px 12px; }
+.msg .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg .who { color: var(--ink-3); margin-bottom: 2px; }
+.msg.user { align-self: flex-end; background: var(--accent-soft); }
+.msg.assistant { align-self: flex-start; background: var(--surface-2); }
+.msg.system { align-self: center; color: var(--ink-3); background: none; padding: 2px 8px; text-align: center; }
+.msg.command { align-self: stretch; max-width: none; background: none; padding: 0; }
+.msg.command pre { margin-top: 4px; }
+.msg.activity { align-self: flex-start; border: 1px dashed var(--line-strong); }
+.msg.activity ul { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.cmd-err { border-color: var(--bad) !important; }
+.composer { display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid var(--line); padding-top: 10px; }
+.composer textarea { flex: 1; min-height: 46px; resize: vertical; }
+.perm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.perm-grid h3 { margin-top: 0; }
+.perm-sources { max-height: 220px; overflow-y: auto; }
+.perm-box { background: var(--surface-2); border-radius: 8px; padding: 12px; margin-bottom: 10px; }

@@ -166,7 +166,7 @@ class ReferenceAgent:
             coord.finish(run, out.rationale, progress)
             return {"next_phase": "stop", "stop_reason": "finished", "progress": progress}
         try:
-            action = ModelAction(tool_id=out.tool_id, arguments=out.arguments)
+            action = ModelAction(tool_id=out.tool_id, arguments=out.arguments if isinstance(out.arguments, dict) else {})
         except Exception:
             coord.set_status(run["run_id"], "paused", "MODEL_OUTPUT_INVALID")
             return {"next_phase": "stop", "stop_reason": "MODEL_OUTPUT_INVALID"}
@@ -184,7 +184,8 @@ class ReferenceAgent:
                                          evidence_refs=[f"lesson:{a['ref']}"])
         action_id, operation_id = coord.issue_operation(run, purpose=f"{action.tool_id}")
         pending = {"tool_id": action.tool_id, "arguments": args, "schema_hash": tool["schema_hash"] if tool else None,
-                   "observation_refs": obs_refs[-40:] + [f"lesson:{a['ref']}" for a in applied if a["applied"]], "call_id": call_id}
+                   "observation_refs": obs_refs[-40:] + [f"lesson:{a['ref']}" for a in applied if a["applied"]], "call_id": call_id,
+                   "tool_use_id": (out.raw or {}).get("tool_use_id")}
         with self.db.tx() as c:
             c.execute("INSERT INTO edges(project_id,run_id,src_ref,dst_ref,kind,detail_json,created_at) VALUES (?,?,?,?,?,?,?)",
                       (run["project_id"], run["run_id"], f"call:{call_id}", f"action:{action_id}", "produced", "{}", utcnow()))

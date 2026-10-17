@@ -18,6 +18,13 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | POST | `/v1/candidates/{candidate_id}/promote` | Promote |
 | POST | `/v1/candidates/{candidate_id}/revise` | Revise |
 | GET | `/v1/capabilities` | Capabilities |
+| GET | `/v1/chats` | List Chats |
+| POST | `/v1/chats` | Create Chat |
+| GET | `/v1/chats/{cid}` | Get Chat |
+| GET | `/v1/chats/{cid}/messages` | Chat Messages |
+| POST | `/v1/chats/{cid}/messages` | Post Chat |
+| PUT | `/v1/chats/{cid}/permissions` | Chat Permissions |
+| POST | `/v1/commands` | Git-style version history command for one agent (same commands as chat's /commands). |
 | GET | `/v1/compare` | Compare |
 | GET | `/v1/decisions/{decision_id}` | Get Decision |
 | GET | `/v1/effects` | Search effects by run (optionally with the runs it spawned), agent, tool, kind, state or free text. |
@@ -33,6 +40,12 @@ All endpoints except `/v1/health` and the loopback-only `/v1/session/bootstrap` 
 | GET | `/v1/incidents` | List Incidents |
 | GET | `/v1/incidents/{incident_id}` | Get Incident |
 | POST | `/v1/incidents/{incident_id}/counterfactual` | Controlled attribution: rerun in sandboxes with only the linked spans masked (bounded repeats). |
+| GET | `/v1/integrations/claude` | Connection status. Never returns the key itself (only its last four characters). |
+| PATCH | `/v1/integrations/claude` | Claude Settings |
+| POST | `/v1/integrations/claude/key` | Claude Key |
+| DELETE | `/v1/integrations/claude/key` | Claude Key Clear |
+| POST | `/v1/integrations/claude/test` | Claude Test |
+| GET | `/v1/integrations/mcp` | Configuration for connecting Claude Code or Claude Desktop to ANTIBODY's protected tools over MCP. |
 | GET | `/v1/jobs` | Jobs |
 | GET | `/v1/jobs/{job_id}` | Job |
 | GET | `/v1/lessons` | Lessons |

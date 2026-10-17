@@ -710,6 +710,108 @@ def create_app(core: Core | None = None) -> FastAPI:
         need(p, body.get("project_id"), "operator")
         return core.versions.gc(body["project_id"], dry_run=bool(body.get("dry_run", True)))
 
+    # ------------------------------------------------------------ Claude connection
+    @app.get("/v1/integrations/claude")
+    def claude_status(p=Depends(principal)):
+        """Connection status. Never returns the key itself (only its last four characters)."""
+        return core.claude.status()
+
+    @app.post("/v1/integrations/claude/key")
+    def claude_key(body: dict = Body(...), p=Depends(principal)):
+        need(p, None, "app", "operator")
+        try:
+            core.claude.save_key(str(body.get("api_key", "")))
+        except ValueError as e:
+            raise InvalidRequest("INVALID_KEY", str(e))
+        core.refresh_auditor()
+        return core.claude.status()
+
+    @app.delete("/v1/integrations/claude/key")
+    def claude_key_clear(p=Depends(principal)):
+        need(p, None, "app", "operator")
+        core.claude.clear_key()
+        core.refresh_auditor()
+        return core.claude.status()
+
+    @app.patch("/v1/integrations/claude")
+    def claude_settings(body: dict = Body(...), p=Depends(principal)):
+        need(p, None, "app", "operator")
+        try:
+            core.claude.update_settings(body)
+        except ValueError as e:
+            raise InvalidRequest("INVALID_SETTING", str(e))
+        core.refresh_auditor()
+        return core.claude.status()
+
+    @app.post("/v1/integrations/claude/test")
+    def claude_test(p=Depends(principal)):
+        need(p, None, "app", "operator")
+        return core.claude.test()
+
+    @app.get("/v1/integrations/mcp")
+    def mcp_snippet(project_id: str, p=Depends(principal)):
+        """Configuration for connecting Claude Code or Claude Desktop to ANTIBODY's protected tools over MCP."""
+        need(p, project_id, "app", "operator")
+        import sys as _sys
+        py = str(Path(_sys.executable))
+        script = str(ROOT / "scripts" / "mcp_serve.py")
+        args = [script, "--project", project_id, "--agent", "Claude Code (via MCP)", "--task", "mcp_tools"]
+        return {"command": py, "args": args,
+                "claude_code_cli": "claude mcp add antibody -- " + " ".join(f'"{a}"' if " " in a else a for a in [py] + args),
+                "mcp_json": {"mcpServers": {"antibody": {"command": py, "args": args}}},
+                "task_id": "mcp_tools",
+                "note": "The first start creates a 'Claude Code (via MCP)' agent and an 'mcp_tools' assignment (read and write files only). "
+                        "Edit that assignment in Assignments to widen or narrow what the connected agent may do."}
+
+    # ------------------------------------------------------------ chat
+    @app.get("/v1/chats")
+    def list_chats(project_id: str, p=Depends(principal)):
+        need(p, project_id, "app", "operator")
+        return core.chat.list(project_id)
+
+    @app.post("/v1/chats")
+    def create_chat(body: dict = Body(...), p=Depends(principal)):
+        need(p, body.get("project_id"), "app")
+        return core.chat.create(body["project_id"], p, body.get("title"), body.get("agent_id"), body.get("permissions"))
+
+    @app.get("/v1/chats/{cid}")
+    def get_chat(cid: str, p=Depends(principal)):
+        c = core.chat.get(cid)
+        need(p, c["project_id"], "app", "operator")
+        return c
+
+    @app.get("/v1/chats/{cid}/messages")
+    def chat_messages(cid: str, after: int = 0, p=Depends(principal)):
+        c = core.chat.get(cid)
+        need(p, c["project_id"], "app", "operator")
+        return {"messages": core.chat.messages(cid, after), "conversation": c}
+
+    @app.post("/v1/chats/{cid}/messages")
+    def post_chat(cid: str, body: dict = Body(...), p=Depends(principal)):
+        c = core.chat.get(cid)
+        need(p, c["project_id"], "app")
+        return core.chat.post(cid, str(body.get("text", "")), p, wait=bool(body.get("wait")))
+
+    @app.put("/v1/chats/{cid}/permissions")
+    def chat_permissions(cid: str, body: dict = Body(...), p=Depends(principal)):
+        c = core.chat.get(cid)
+        need(p, c["project_id"], "app")
+        return core.chat.set_permissions(cid, body, p)
+
+    @app.post("/v1/commands")
+    def run_command(body: dict = Body(...), p=Depends(principal)):
+        """Git-style version history command for one agent (same commands as chat's /commands)."""
+        need(p, body.get("project_id"), "app")
+        agent_id = body.get("agent_id")
+        if not agent_id and body.get("agent_name"):
+            row = core.db.one("SELECT agent_id FROM agents WHERE project_id=? AND name=?", (body["project_id"], body["agent_name"]))
+            if not row:
+                raise NotFound(f"agent named {body['agent_name']}")
+            agent_id = row["agent_id"]
+        if not agent_id:
+            raise InvalidRequest("AGENT_REQUIRED", "name an agent (agent_id or agent_name)")
+        return core.commands.run(body["project_id"], agent_id, body.get("branch_id"), str(body.get("command", "")), p["actor_id"])
+
     # ------------------------------------------------------------ export
     @app.get("/v1/export")
     def export(project_id: str, p=Depends(principal)):

@@ -2,6 +2,7 @@ import React from "react";
 import { api, currentProject, newKey, q } from "../api";
 import { Page } from "../App";
 import { Badge, Btn, ErrorBox, Json, KV, Loading, useAction, useApi } from "../ui";
+import { ConnectClaude, ConnectClaudeCode } from "./Connections";
 
 export default function Settings() {
   const pid = currentProject();
@@ -18,6 +19,8 @@ export default function Settings() {
       <ErrorBox error={s.error || caps.error} />
       <div className="split">
         <div>
+          <ConnectClaude />
+          <ConnectClaudeCode />
           <div className="card">
             <h2>Adapter capability profiles</h2>
             {caps.data ? caps.data.adapters.map((a: any) => (

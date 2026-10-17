@@ -208,6 +208,29 @@ class ContextCompiler:
             summ_text = f"{len(budget_omits)} earlier observation chunk(s) omitted for budget; full history remains in storage."
             packet["summaries"].append({"text": summ_text, "deps": budget_omits[:50], "origin": "AGENT_DERIVED"})
             used += estimate_tokens(summ_text)
+        # chat: the conversation so far (user turns are the user's own words, so they carry user authority
+        # for *what to do*; typed permissions still come only from the assignment)
+        chat = loads(run["start_config_json"]).get("chat")
+        if chat:
+            turns = self.db.all("SELECT seq, role, text FROM chat_messages WHERE conversation_id=? AND seq<? AND role IN ('user','assistant') ORDER BY seq",
+                                (chat["conversation_id"], chat["seq"]))
+            kept = []
+            for t in reversed(turns):
+                tok = estimate_tokens(t["text"])
+                if used + tok > usable:
+                    omitted.append({"ref": f"chat:{chat['conversation_id']}#{t['seq']}", "reason": "budget"})
+                    continue
+                used += tok
+                kept.append({"role": t["role"], "text": t["text"]})
+            packet["conversation"] = list(reversed(kept))
+            cur = self.db.one("SELECT text FROM chat_messages WHERE conversation_id=? AND seq=?", (chat["conversation_id"], chat["seq"]))
+            packet["current_message"] = cur["text"] if cur else ""
+            used += estimate_tokens(packet["current_message"])
+        packet["repair_generation"] = self.db.scalar(
+            "SELECT COUNT(*) FROM dispositions WHERE run_id=? AND reason LIKE 'context_repair%'", (run["run_id"],)) or 0
+        packet["source_labels"] = {r["source_id"]: r["label"] for r in self.db.all(
+            f"SELECT source_id, label FROM sources WHERE source_id IN ({','.join('?' * len(body['resources']['source_ids']))})",
+            body["resources"]["source_ids"])} if body["resources"]["source_ids"] else {}
         packet["fits"] = True
         packet["token_count"] = used
         packet["usable_tokens"] = usable

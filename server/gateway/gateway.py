@@ -275,15 +275,15 @@ class Gateway:
                           "file_roots": body["file_roots"]}
             action = {"tool_id": tool["tool_id"], "effect_class": ec, "arguments": redact(args)}
             try:
-                out = self.auditor.run(assignment, action, anchors)
+                out = self.core.auditor.run(assignment, action, anchors)
             except AuditorFailure as e:
                 fallback = policy.get("read_only_safe_fallback") and ec in ("read", "read_network")
                 if fallback:
-                    audit = {"auditor": self.auditor.name, "error": str(e), "fallback": "read_only_safe_fallback"}
+                    audit = {"auditor": self.core.auditor.name, "error": str(e), "fallback": "read_only_safe_fallback"}
                     ok("audit", "auditor failed; explicit read-only safe fallback")
                     return checks, evidence, audit, attribution, grant
                 raise Deny("PAUSE", "AUDIT_FAILED", f"{e}. Mutating actions fail closed.", evidence=evidence)
-            audit = {"auditor": self.auditor.name, **out.model_dump()}
+            audit = {"auditor": self.core.auditor.name, **out.model_dump()}
             if out.outcome == "uncertain":
                 raise Deny("PAUSE", "AUDIT_UNCERTAIN", out.note or None, evidence=out.evidence_refs, attribution="hypothesized")
             if out.outcome == "deny":

@@ -1,0 +1,4 @@
+#!/bin/sh
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -x "$DIR/.venv/Scripts/python.exe" ]; then PY="$DIR/.venv/Scripts/python.exe"; else PY="$DIR/.venv/bin/python"; fi
+exec "$PY" "$DIR/server/antibody_cli.py" "$@"

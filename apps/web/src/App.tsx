@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, bootstrap, currentProject, knownProjects, q } from "./api";
 import { ErrorBox, Loading } from "./ui";
 import Overview from "./views/Overview";
+import Chat from "./views/Chat";
 import Assignments from "./views/Assignments";
 import Runs from "./views/Runs";
 import Incidents from "./views/Incidents";
@@ -23,7 +24,7 @@ function useRoute(): string[] {
 }
 
 const NAV: { group: string; items: [string, string, string?][] }[] = [
-  { group: "Work", items: [["", "Overview"], ["assignments", "Assignments"], ["runs", "Runs"], ["sources", "Sources"]] },
+  { group: "Work", items: [["", "Overview"], ["chat", "Chat"], ["assignments", "Assignments"], ["runs", "Runs"], ["sources", "Sources"]] },
   { group: "Protect & learn", items: [["incidents", "Incidents", "open_incidents"], ["knowledge", "Knowledge"], ["evaluation", "Evaluation"]] },
   { group: "RECEIPT", items: [["history", "Version history", "versions"], ["effects", "Effects & outbox", "unknown_effects"]] },
   { group: "System", items: [["settings", "Settings & capabilities"]] },
@@ -84,6 +85,7 @@ export default function App() {
   const [section, ...rest] = route;
   let view: React.ReactNode;
   switch (section) {
+    case "chat": view = <Chat chatId={rest[0]} />; break;
     case "assignments": view = <Assignments />; break;
     case "runs": view = <Runs runId={rest[0]} />; break;
     case "incidents": view = <Incidents incidentId={rest[0]} />; break;

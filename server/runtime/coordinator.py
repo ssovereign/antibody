@@ -5,6 +5,7 @@ state export/restore and capability profiles.
 from __future__ import annotations
 
 import copy
+import json
 import shutil
 import threading
 from pathlib import Path
@@ -84,7 +85,7 @@ class Coordinator:
         return out
 
     def planner_for(self, run: dict, cfg: dict):
-        return build_planner(cfg["model"], self.core.compiler)
+        return build_planner(cfg["model"], self.core)
 
     # ================================================================ runs
     def start_run(self, project_id: str, agent_id: str, task_ref: str, *, base_version: str | None = None,
@@ -120,7 +121,7 @@ class Coordinator:
         model_cfg.update({k: v for k, v in agent["config"].get("planner", {}).items()})
         if extra and extra.get("model_override"):
             model_cfg.update(extra.pop("model_override"))
-        planner = build_planner(model_cfg, self.core.compiler)
+        planner = build_planner(model_cfg, self.core)
         if mode and mode != planner.mode:
             raise InvalidRequest("MODE_MISMATCH", f"this agent's model provider runs in {planner.mode} mode, not {mode}")
         policy = self.core.projects.policy(project_id)
@@ -219,7 +220,10 @@ class Coordinator:
             run = self.run(run_id)
             if run["status"] == "recovering":
                 self.do_recovery(run)
-            return self.run(run_id)
+            run = self.run(run_id)
+            if loads(run["start_config_json"]).get("chat"):
+                self.core.chat.after_run(run)
+            return run
         finally:
             lock.release()
 
@@ -327,6 +331,8 @@ class Coordinator:
             else:
                 self.core.health.transition(run["run_id"], "Paused", "TASK_CHECK_FAILED", {"final_check": reason})
         self.set_status(run["run_id"], "completed", reason)
+        if loads(run["start_config_json"]).get("chat"):
+            self.core.chat.add_reply(run, rationale)
 
     def add_cost(self, run_id: str, in_tok: int | None, out_tok: int | None, kind: str) -> None:
         run = self.run(run_id)
@@ -436,11 +442,17 @@ class Coordinator:
                 progress["attempted"].append(key)
         progressed = False
         state = d.get("effect_state")
+        from .planner import record_tool_result
+        tu = p.get("tool_use_id")
+        short_args = ", ".join(f"{k}={str(v)[:60]}" for k, v in args.items() if k != "content")
         self.db.execute("INSERT INTO edges(project_id,run_id,src_ref,dst_ref,kind,detail_json,created_at) VALUES (?,?,?,?,?,?,?)",
                         (run["project_id"], run["run_id"], f"action:{d['action_id']}", f"decision:{d['decision_id']}", "decided",
                          dumps({"outcome": d["outcome"]}), utcnow()))
-        if d["outcome"] == "DENY":
-            progress.setdefault("denied", []).append({"tool_id": tool, "reason_code": d["reason_code"]})
+        if d["outcome"] in ("DENY", "PAUSE"):
+            if d["outcome"] == "DENY":
+                progress.setdefault("denied", []).append({"tool_id": tool, "reason_code": d["reason_code"]})
+            progress.setdefault("log", []).append(f"{tool}({short_args}) was blocked: {d['reason_code']}")
+            record_tool_result(progress, tu, f"Blocked before execution ({d['reason_code']}): {d['message']} Nothing was done.", True)
         elif d["outcome"] == "ALLOW" and (state == "COMPLETED" or d.get("deduplicated")):
             res = d.get("result") or {}
             if tool == "read_source":
@@ -473,6 +485,9 @@ class Coordinator:
                 progressed = True
             self.db.execute("INSERT INTO edges(project_id,run_id,src_ref,dst_ref,kind,detail_json,created_at) VALUES (?,?,?,?,?,?,?)",
                             (run["project_id"], run["run_id"], f"action:{d['action_id']}", f"effect:{d['operation_id']}", "result", "{}", utcnow()))
+            progress.setdefault("log", []).append(f"{tool}({short_args}) completed")
+            if tu:
+                record_tool_result(progress, tu, self._result_text(run, tool, args, res, observations), False)
         elif d["outcome"] == "ALLOW" and state == "FAILED":
             err = (d.get("result") or {}).get("error") or {}
             if tool == "write_report":
@@ -483,10 +498,37 @@ class Coordinator:
                                                         "error_family": err.get("family"), "error_message": err.get("message", "")})
             refs = self.receive_observation(run, src["source_id"])
             observations.extend(refs)
+            progress.setdefault("log", []).append(f"{tool}({short_args}) failed: {err.get('family')}")
+            record_tool_result(progress, tu, f"The tool failed ({err.get('code')}, {err.get('family')}): {err.get('message', '')}", True)
+        elif d["outcome"] == "ALLOW" and state == "UNKNOWN":
+            record_tool_result(progress, tu, "The outcome is unknown (the tool may have completed). The run is paused until it is reconciled.", True)
         self.journal.append(run["project_id"], run["run_id"], "check.finished",
                             {"check": "step", "tool_id": tool, "outcome": d["outcome"], "effect_state": state, "progress": progressed},
                             actor_type="checker")
         return progressed
+
+    def _result_text(self, run: dict, tool: str, args: dict, res: dict, observations: list) -> str:
+        """What goes back to the model: screened text for reads, a short factual line otherwise."""
+        if tool in ("read_source", "fetch_url"):
+            sid = res.get("source_id")
+            if tool == "fetch_url":
+                eff = self.db.one("SELECT external_ref FROM effects WHERE run_id=? AND tool_id='fetch_url' ORDER BY updated_at DESC LIMIT 1", (run["run_id"],))
+                sid = eff["external_ref"] if eff else None
+            parts = []
+            for ch in (self.core.sources.chunks(sid) if sid else []):
+                text, labels = self.core.compiler.observation_text(run, ch["ref"])
+                parts.append(text if text is not None else f"[{ch['ref']} withheld: {labels.get('reason')}]")
+            src = self.core.sources.get(sid) if sid else None
+            head = '<data source="%s" label="%s" origin="%s">' % (sid, (src or {}).get("label") or "", (src or {}).get("origin", "EXTERNAL_DATA"))
+            return head + "\n" + "\n".join(parts)[:20000] + "\n</data>"
+        if tool == "read_file":
+            return '<data file="%s">\n%s\n</data>' % (args.get("path"), str(res.get("text", ""))[:20000])
+        if tool == "write_report":
+            chk = self.db.one("SELECT check_status FROM artifacts WHERE project_id=? AND branch_id=? AND path=?", (run["project_id"], run["branch_id"], args["path"]))
+            return f"Wrote {args['path']} ({res.get('bytes_written')} bytes, {res.get('encoding')}). Independent check: {chk['check_status'] if chk else 'not run'}."
+        if tool == "send_report":
+            return f"Delivered {args.get('artifact_path')} to {args.get('recipient_id')} (operation {res.get('operation_id')})."
+        return json.dumps({k: v for k, v in res.items() if k != "body_bytes"}, ensure_ascii=False, default=str)[:8000]
 
     def check_artifact(self, run: dict, path: str) -> dict:
         pid = run["project_id"]

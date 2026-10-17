@@ -142,6 +142,17 @@ class McpProxy:
         self.core.executors.mcp_clients[server_id] = client
         return {"server_id": server_id, "server_info": init.get("serverInfo"), "exposed": sorted(self.exposed), "dropped": self.dropped}
 
+    def expose_task_tools(self, task_id: str) -> list[str]:
+        """Serve ANTIBODY's own tools (files, sources, outbox, fetch) to the host, limited to those the assignment allows.
+        Every call still goes through the gateway and the assignment's typed limits."""
+        from ..tool_docs import describe
+        task = self.core.projects.get_task(self.project_id, task_id)
+        for tid in task["body"]["tools"]:
+            t = self.core.projects.tool(self.project_id, tid)
+            if t and not t["executor"].startswith("mcp:"):
+                self.exposed[tid] = {"name": tid, "description": describe(tid), "inputSchema": t["schema"]}
+        return sorted(self.exposed)
+
     def start_run(self, agent_id: str, task_id: str, mode: str = "live") -> dict:
         c = self.core
         agent = c.coordinator.agent(agent_id)
