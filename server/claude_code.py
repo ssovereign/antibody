@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -37,6 +39,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import cc_state as cc
+from .cc_remote import RemoteStore, client_path_module
 from .canonical import dumps, hash_value, loads, new_id, utcnow
 from .gateway.auditor import AuditorFailure
 from .gateway.gateway import Deny, SUSPICIOUS_QUERY
@@ -77,14 +80,29 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 HOST_RE = re.compile(r"(?<![\w@./-])((?:[a-z0-9-]+\.)+(?:com|net|org|io|dev|app|example|co|ai|xyz|info|biz|ru|cn|me|site|online))(?![\w.-])", re.I)
 
 
+def _flavour(p: str):
+    """Paths come from the user's computer: Windows paths stay Windows paths even on a Linux server."""
+    s = str(p)
+    if re.match(r"^[A-Za-z]:[\\/]", s) or s.startswith("\\\\"):
+        return ntpath
+    if s.startswith("/"):
+        return posixpath
+    return os.path
+
+
 def norm(p: str | os.PathLike) -> str:
-    return os.path.normcase(os.path.realpath(os.path.expanduser(str(p))))
+    s = str(p)
+    pm = _flavour(s)
+    if pm.__name__ == os.path.__name__:  # a path on this machine: resolve links too
+        return os.path.normcase(os.path.realpath(os.path.expanduser(s)))
+    return pm.normcase(pm.normpath(s))
 
 
 def within(path: str, root: str) -> bool:
+    pm = _flavour(root)
     try:
-        return os.path.commonpath([norm(path), norm(root)]) == norm(root)
-    except ValueError:  # different drives
+        return pm.commonpath([norm(path), norm(root)]) == norm(root)
+    except ValueError:  # different drives or flavours
         return False
 
 
@@ -93,6 +111,7 @@ class ClaudeCodeGuard:
         self.core = core
         self.db = core.db
         self.runner_factory = None  # tests inject a scripted AgentRunner
+        self.remote = RemoteStore(core)
 
     # ------------------------------------------------------------ setup
     def ensure_tools(self, project_id: str) -> None:
@@ -101,14 +120,15 @@ class ClaudeCodeGuard:
                 self.core.projects.register_tool(project_id, f"cc.{name}", {"type": "object"}, ec, "host:claude_code",
                                                  meta={"host_tool": name})
 
-    def agent_for_dir(self, project_id: str, project_dir: str, actor: str = "claude_code") -> dict:
-        pd = os.path.realpath(project_dir)
+    def agent_for_dir(self, project_id: str, project_dir: str, actor: str = "claude_code", remote: bool = False) -> dict:
+        pm = client_path_module(project_dir) if remote else os.path
+        pd = pm.normpath(project_dir) if remote else os.path.realpath(project_dir)
         key = hashlib.sha256(norm(pd).encode()).hexdigest()[:10]
         for a in self.core.coordinator.agents(project_id):
             if a["adapter"] == ADAPTER and norm(a["config"].get("project_dir", "")) == norm(pd):
                 return a
         self.ensure_tools(project_id)
-        name = f"Claude Code: {Path(pd).name}"
+        name = f"Claude Code: {pm.basename(pd.rstrip(chr(92) + '/')) or pd}"
         if self.db.one("SELECT 1 FROM agents WHERE project_id=? AND name=?", (project_id, name)):
             name = f"{name} ({key[:4]})"
         task_id = f"cc_{key}"
@@ -120,7 +140,7 @@ class ClaudeCodeGuard:
                 tools=[f"cc.{t}" for t in DEFAULT_ALLOWED], read_network={"public_https": True, "allowed_hosts": []}, max_tool_steps=100000),
                 {"role": "app", "actor_id": actor})
         return self.core.coordinator.create_agent(project_id, name, ADAPTER, {
-            "project_dir": pd, "task_id": task_id, "host": HOST,
+            "project_dir": pd, "task_id": task_id, "host": HOST, "remote": bool(remote),
             "instructions": "Claude Code session guarded by ANTIBODY hooks"}, actor=actor)
 
     def session(self, project_id: str, ev: dict) -> tuple[dict, dict]:
@@ -138,7 +158,7 @@ class ClaudeCodeGuard:
             return self.core.coordinator.agent(row["agent_id"]), run
         cwd = ev.get("cwd") or os.getcwd()
         root = ev.get("antibody_project_dir") or cwd  # sent by the hook script (installed folder / CLAUDE_PROJECT_DIR)
-        agent = self.agent_for_dir(project_id, root)
+        agent = self.agent_for_dir(project_id, root, remote=bool(ev.get("antibody_remote")))
         run = self.core.coordinator.start_host_run(project_id, agent["agent_id"], agent["config"]["task_id"], ADAPTER,
                                                    extra={"host": {"name": HOST, "session_id": sid, "cwd": cwd}})
         now = utcnow()
@@ -147,10 +167,26 @@ class ClaudeCodeGuard:
         return agent, run
 
     # ------------------------------------------------------------ hook entry
+    def is_remote(self, agent: dict) -> bool:
+        return bool(agent["config"].get("remote"))
+
     def handle(self, project_id: str, ev: dict) -> dict:
-        """Returns {"stdout": <json or text or None>, "exit": int}."""
-        name = ev.get("hook_event_name")
+        """Returns {"stdout": <json or text or None>, "exit": int}; in hosted mode possibly {"need_blobs": [...]}
+        (send that content, then the same event again) and "apply" (changes for the user's computer)."""
+        self.core.claude.bill_to(project_id)
         agent, run = self.session(project_id, ev)
+        if self.is_remote(agent) and ev.get("antibody_snapshot") is not None:
+            missing = self.remote.missing(project_id, ev["antibody_snapshot"])
+            if missing:
+                return {"need_blobs": missing}
+            self.remote.store(project_id, agent, ev["antibody_snapshot"])
+        out = self._handle(project_id, agent, run, ev)
+        if self.is_remote(agent):
+            out["apply"] = self.remote.deliver(project_id, agent["agent_id"])
+        return out
+
+    def _handle(self, project_id: str, agent: dict, run: dict, ev: dict) -> dict:
+        name = ev.get("hook_event_name")
         if run["status"] == "running":
             self.core.coordinator.refresh_registry(run)  # newly accepted patterns apply from the next event
             run = self.core.coordinator.run(run["run_id"])
@@ -270,10 +306,11 @@ class ClaudeCodeGuard:
         policy = self.core.projects.policy(run["project_id"])
         pdir = agent["config"]["project_dir"]
         # Claude Code keeps this project's auto-memory outside the folder; it is part of the agent, not "elsewhere"
-        memory_dir = str(cc.projects_root() / cc.encode_dir(pdir) / "memory")
+        memory_dir = self.memory_dir_str(agent)
         roots = [pdir, memory_dir] + list(agent["config"].get("extra_roots", []))
-        guard_files = [os.path.join(pdir, ".claude", "settings.json"), os.path.join(pdir, ".claude", "settings.local.json"),
-                       os.path.join(pdir, ".mcp.json")]
+        pm = client_path_module(pdir) if self.is_remote(agent) else os.path
+        guard_files = [pm.join(pdir, ".claude", "settings.json"), pm.join(pdir, ".claude", "settings.local.json"),
+                       pm.join(pdir, ".mcp.json")]
         ec = CC_TOOLS.get(key, "read")
         values: dict[str, str] = {}
 
@@ -285,7 +322,7 @@ class ClaudeCodeGuard:
                 raise Deny("DENY", "HARD_POLICY", "Changing ANTIBODY's guard configuration from inside the session is not allowed.")
             if not any(within(path, r) for r in roots):
                 raise Deny("DENY", "PATH_OUTSIDE_WORKSPACE", f"{path} is outside this project folder.")
-            if os.path.islink(path):
+            if not self.is_remote(agent) and os.path.islink(path):
                 raise Deny("DENY", "PATH_OUTSIDE_WORKSPACE", "Writing through a symbolic link is not allowed.")
             ok("file_scope", "inside project")
             values["path"] = path
@@ -484,6 +521,8 @@ class ClaudeCodeGuard:
         that the previous version had but this one does not. Untracked files, .claude settings and the
         transcript copy are left alone."""
         pid = agent["project_id"]
+        if self.is_remote(agent):
+            return self._checkout_remote(agent, from_version, to_version)
         pdir = Path(agent["config"]["project_dir"])
         new = self.core.versions.manifest_state(pid, self.core.versions.version(to_version)["manifest"])["files"]
         old = self.core.versions.manifest_state(pid, self.core.versions.version(from_version)["manifest"])["files"] if from_version else {}
@@ -523,6 +562,43 @@ class ClaudeCodeGuard:
             changes.append("removed " + rel)
         return changes
 
+    def _checkout_remote(self, agent: dict, from_version: str | None, to_version: str) -> list[str]:
+        """Hosted mode: the same checkout, as operations the user's connector applies to their folder."""
+        pid = agent["project_id"]
+        pdir = agent["config"]["project_dir"]
+        pm = client_path_module(pdir)
+        snap = self.remote.snapshot(agent)
+        new = self.core.versions.manifest_state(pid, self.core.versions.version(to_version)["manifest"])["files"]
+        old = self.core.versions.manifest_state(pid, self.core.versions.version(from_version)["manifest"])["files"] if from_version else {}
+        skip = lambda rel: rel.startswith("_claude_session/") or rel.startswith(".claude/settings") or rel == ".mcp.json"  # noqa: E731
+        changes = []
+        mem = self.memory_dir_str(agent)
+        new_mem = {k[len(MEMORY_PREFIX):]: v for k, v in new.items() if k.startswith(MEMORY_PREFIX)}
+        old_mem = {k[len(MEMORY_PREFIX):] for k in old if k.startswith(MEMORY_PREFIX)}
+        if new_mem or old_mem:
+            for rel, info in new_mem.items():
+                if snap["memory"].get(rel) != info["blob"]:
+                    self.remote.queue(agent, {"op": "write", "path": pm.join(mem, *rel.split("/")), "root": "memory", "blob": info["blob"]})
+                    changes.append("memory: " + rel)
+            for rel in sorted(old_mem - set(new_mem)):
+                if rel in snap["memory"]:
+                    self.remote.queue(agent, {"op": "delete", "path": pm.join(mem, *rel.split("/")), "root": "memory"})
+                    changes.append("memory removed: " + rel)
+        for rel, info in new.items():
+            if skip(rel) or ".." in rel.split("/"):
+                continue
+            cur = snap["files"].get(rel)
+            if cur == info["blob"]:
+                continue
+            self.remote.queue(agent, {"op": "write", "path": pm.join(pdir, *rel.split("/")), "root": "project", "blob": info["blob"]})
+            changes.append(("updated " if cur else "added ") + rel)
+        for rel in sorted(set(old) - set(new)):
+            if skip(rel) or rel not in snap["files"]:
+                continue
+            self.remote.queue(agent, {"op": "delete", "path": pm.join(pdir, *rel.split("/")), "root": "project"})
+            changes.append("removed " + rel)
+        return changes
+
     def _transcript_path(self, agent: dict, session_id: str | None) -> str | None:
         """The conversation to save: this session's if it has one; otherwise (a new window opened just to type
         `ab: save`) the most recent conversation on the current branch, then the most recent one at all."""
@@ -545,23 +621,52 @@ class ClaudeCodeGuard:
                     return r["transcript_path"]
         return None
 
+    def _folder_files(self, agent: dict) -> dict:
+        """rel path -> bytes or Path: the project folder as it is now."""
+        if self.is_remote(agent):
+            pid = agent["project_id"]
+            return {rel: _Blob(self.core.objects, pid, ref) for rel, ref in self.remote.snapshot(agent)["files"].items()}
+        pdir = agent["config"]["project_dir"]
+        return {str(p.relative_to(pdir)).replace("\\", "/"): p for p in self.project_files(pdir)}
+
+    def _memory_files(self, agent: dict) -> dict:
+        if self.is_remote(agent):
+            pid = agent["project_id"]
+            return {rel: _Blob(self.core.objects, pid, ref) for rel, ref in self.remote.snapshot(agent)["memory"].items()}
+        mem = self.memory_dir(agent)
+        if not mem.is_dir():
+            return {}
+        return {f.relative_to(mem).as_posix(): f for f in sorted(mem.rglob("*")) if f.is_file() and f.stat().st_size <= MAX_FILE_BYTES}
+
+    def _transcript_bytes(self, agent: dict, session_id: str | None) -> bytes | None:
+        if self.is_remote(agent):
+            return self.remote.transcript(agent, session_id or agent["config"].get("current_session"), self._branch_id(agent))
+        p = self._transcript_path(agent, session_id)
+        return Path(p).read_bytes() if p else None
+
+    def memory_dir_str(self, agent: dict) -> str:
+        if self.is_remote(agent):
+            client = self.remote.snapshot(agent)["client"]
+            if client.get("memory_dir"):
+                return client["memory_dir"]
+            pm = client_path_module(agent["config"]["project_dir"])
+            root = client.get("claude_projects_dir") or ""
+            return pm.join(root, cc.encode_dir(agent["config"]["project_dir"]), "memory")
+        return str(self.memory_dir(agent))
+
     def sync_workspace(self, agent: dict, branch: dict, include_transcript: bool = False, session_id: str | None = None) -> dict:
         """Mirror the project folder into the branch workspace so status/diff/save see the real files.
         With include_transcript, the live Claude Code conversation is stored too (as fixed-size parts, so an
         append-only transcript shares unchanged parts across checkpoints)."""
-        pdir = agent["config"]["project_dir"]
         ws = Path(branch["workspace_dir"])
         ws.mkdir(parents=True, exist_ok=True)
-        wanted: dict[str, bytes | Path] = {str(p.relative_to(pdir)).replace("\\", "/"): p for p in self.project_files(pdir)}
-        tpath = self._transcript_path(agent, session_id) if include_transcript else None
+        wanted = dict(self._folder_files(agent))
+        tbytes = self._transcript_bytes(agent, session_id) if include_transcript else None
         if include_transcript:
-            mem = self.memory_dir(agent)
-            if mem.is_dir():
-                for f in sorted(mem.rglob("*")):
-                    if f.is_file() and f.stat().st_size <= MAX_FILE_BYTES:
-                        wanted[f"{MEMORY_PREFIX}{f.relative_to(mem).as_posix()}"] = f
-        if tpath:
-            data = Path(tpath).read_bytes()
+            for rel, src in self._memory_files(agent).items():
+                wanted[f"{MEMORY_PREFIX}{rel}"] = src
+        if tbytes:
+            data = tbytes
             entries = cc.parse_lines(data)
             for i, part in enumerate(cc.split_parts(data)):
                 wanted[f"{cc.PARTS_DIR}/{i:04d}.jsonl"] = part
@@ -582,7 +687,7 @@ class ClaudeCodeGuard:
                 continue
             if not dst.exists() or dst.read_bytes() != data:
                 dst.write_bytes(data)
-        return {"files": len(wanted), "conversation": bool(tpath)}
+        return {"files": len(wanted), "conversation": bool(tbytes)}
 
     def memory_dir(self, agent: dict) -> Path:
         return cc.projects_root() / cc.encode_dir(agent["config"]["project_dir"]) / "memory"
@@ -620,7 +725,15 @@ class ClaudeCodeGuard:
         if not ch:
             return None
         clean, removed = cc.screen_chain(ch, self.patterns(pid))
-        sid, path = cc.write_session(clean, agent["config"]["project_dir"], title)
+        if self.is_remote(agent):
+            pdir = agent["config"]["project_dir"]
+            pm = client_path_module(pdir)
+            sid, data = cc.build_session(clean, pdir, title)
+            root = self.remote.snapshot(agent)["client"].get("claude_projects_dir") or ""
+            path = pm.join(root, cc.encode_dir(pdir), f"{sid}.jsonl")
+            self.remote.queue(agent, {"op": "write", "path": path, "root": "claude_projects", "blob": self.core.objects.put(pid, data)})
+        else:
+            sid, path = cc.write_session(clean, agent["config"]["project_dir"], title)
         self.core.journal.append(pid, f"agent:{agent['agent_id']}", "agent_state.opened",
                                  {"version_id": version_id, "session_id": sid, "messages": len(clean), "removed": removed}, actor_type="host")
         return {"session_id": sid, "path": str(path), "messages": len(clean), "removed": removed}
@@ -821,3 +934,13 @@ def _response_text(resp) -> str:
 def _parsed(text: str, tool: str, label: str):
     from .ingress.parsers import ParsedSource
     return ParsedSource(view=text[:500_000], parser=f"claude_code_{tool.lower()}", metadata={"host": HOST, "tool": tool, "label": label[:300]})
+
+
+class _Blob:
+    """Lazy stored content, read only when it is actually needed."""
+
+    def __init__(self, objects, project_id: str, ref: str):
+        self.objects, self.project_id, self.ref = objects, project_id, ref
+
+    def read_bytes(self) -> bytes:
+        return self.objects.get(self.project_id, self.ref)

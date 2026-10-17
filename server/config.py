@@ -44,6 +44,12 @@ class Config:
     # hosting: extra host names / browser origins allowed (comma separated in the environment)
     EXTRA_ALLOWED_HOSTS: list = field(default_factory=list)
     EXTRA_UI_ORIGINS: list = field(default_factory=list)
+    # hosted accounts: GitHub sign-in (register an OAuth app; callback = PUBLIC_URL + /v1/auth/github/callback)
+    PUBLIC_URL: str = ""
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    # Claude calls each project may make per day on the server's key (0 = no limit)
+    CLAUDE_DAILY_CALLS_PER_PROJECT: int = 0
     API_PORT: int = 8765
     UI_ORIGIN: str = "http://127.0.0.1:5173"
     PROJECT_AUTH_MODE: str = "local"  # local (loopback bootstrap) | token

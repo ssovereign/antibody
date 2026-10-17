@@ -55,6 +55,11 @@ def unreachable(ev: dict, why: str) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
+    if "--connector" in args:  # hosted ANTIBODY: snapshots up, changes down (see antibody_connector.py)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import antibody_connector
+        antibody_connector.hook_main(args)
+        return
     project = args[args.index("--project") + 1] if "--project" in args else os.environ.get("ANTIBODY_PROJECT", "")
     raw = sys.stdin.buffer.read()
     try:

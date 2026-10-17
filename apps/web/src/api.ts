@@ -80,7 +80,30 @@ export function signOut() {
   token = null;
 }
 
+let authCfg: { mode: string; github: boolean } | null = null;
+export async function authConfig(): Promise<{ mode: string; github: boolean }> {
+  if (authCfg) return authCfg;
+  try {
+    authCfg = await (await fetch(`${API_BASE}/v1/auth/config`)).json();
+  } catch {
+    authCfg = { mode: "local", github: false };
+  }
+  return authCfg!;
+}
+export function isHosted(): boolean {
+  return !!keep("ab_access_token");
+}
+export function githubSignInUrl(): string {
+  return `${API_BASE}/v1/auth/github/start`;
+}
+
 export async function bootstrap(pid?: string): Promise<{ project_id: string }> {
+  // back from GitHub: the access token arrives in the URL fragment (never sent to a server)
+  const m = window.location.hash.match(/signin-token=([^&]+)/);
+  if (m) {
+    window.history.replaceState(null, "", window.location.pathname + "#/");
+    return signIn(decodeURIComponent(m[1]), pid);
+  }
   const saved = keep("ab_access_token");
   if (saved) return signIn(saved, pid);
   let fromUrl: string | null = null;

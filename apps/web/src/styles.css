@@ -187,3 +187,10 @@ ul.facts, ul.hyp { padding-left: 0; }
 .convo { max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
 .convo p { margin: 4px 0; }
 .convo p.you { font-weight: 600; }
+
+/* hosted sign-in */
+.gh-button { display: inline-block; background: #24292f; color: #fff; padding: 9px 16px; border-radius: 8px; font-weight: 600; }
+.gh-button:hover { filter: brightness(1.15); }
+:root[data-theme="dark"] .gh-button, .gh-button { border: 1px solid var(--line-strong); }
+.link-button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
+.code-box { font-family: ui-monospace, Consolas, monospace; word-break: break-all; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }

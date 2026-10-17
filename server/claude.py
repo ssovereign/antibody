@@ -37,12 +37,32 @@ class ClaudeNotConnected(Exception):
     pass
 
 
+class ClaudeLimitReached(ClaudeNotConnected):
+    pass
+
+
 class ClaudeConnection:
     def __init__(self, config):
         self.config = config
         self._lock = threading.Lock()
         self.http_client = None  # test hook: an anthropic.DefaultHttpxClient with a mock transport
         self._settings_path = Path(config.SECRETS_PATH).with_name("integrations.json")
+        self._tl = threading.local()  # which project this thread's Claude calls are billed to
+        self.db = None  # set by Core
+
+    def bill_to(self, project_id: str | None) -> None:
+        self._tl.project_id = project_id
+
+    def _charge(self) -> None:
+        cap = int(self.config.CLAUDE_DAILY_CALLS_PER_PROJECT or 0)
+        pid = getattr(self._tl, "project_id", None)
+        if not cap or not pid or self.db is None:
+            return
+        day = utcnow()[:10]
+        used = self.db.scalar("SELECT calls FROM claude_usage WHERE project_id=? AND day=?", (pid, day)) or 0
+        if used >= cap:
+            raise ClaudeLimitReached(f"This account reached today's limit of {cap} Claude calls on the shared key. It resets at midnight UTC.")
+        self.db.execute("INSERT INTO claude_usage VALUES (?,?,1) ON CONFLICT(project_id, day) DO UPDATE SET calls=calls+1", (pid, day))
 
     # ------------------------------------------------------------ storage
     def _secrets(self) -> dict:
@@ -132,8 +152,9 @@ class ClaudeConnection:
             raise ClaudeNotConnected("Claude is not connected. Add an Anthropic API key in Settings → Connect Claude.")
         st = self.settings()
         kw = {"base_url": st["base_url"], "max_retries": 2, "timeout": 600.0}
-        if st.get("workspace_id"):
-            kw["default_headers"] = {"anthropic-workspace-id": st["workspace_id"]}
+        ws = st.get("workspace_id") or os.environ.get("ANTHROPIC_WORKSPACE_ID", "")
+        if ws:
+            kw["default_headers"] = {"anthropic-workspace-id": ws}
         if key:
             kw["api_key"] = key
         elif token:
@@ -153,6 +174,7 @@ class ClaudeConnection:
         oc.setdefault("effort", st["effort"])
         kwargs["output_config"] = oc
         c = self.client()
+        self._charge()
         if st.get("fallbacks") and kwargs["model"] in ("claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"):
             return c.beta.messages.create(betas=[FALLBACK_BETA], fallbacks="default", **kwargs)
         return c.messages.create(**kwargs)

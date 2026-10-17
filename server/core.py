@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .chat import ChatService
 from .claude import ClaudeConnection
+from .accounts import Accounts
 from .cc_learning import FailureLearning
 from .claude_code import ClaudeCodeGuard
 from .commands import Commands
@@ -40,6 +41,7 @@ class Core:
         self.sources = SourceService(self.db, self.objects, self.config)
         self.registry = Registry(self)
         self.claude = ClaudeConnection(self.config)
+        self.claude.db = self.db
         self.auditor = build_auditor(self.config.AUDITOR_PROVIDER, self.config.MODEL_ID, self.config.GUARD_TIMEOUT_SECONDS)
         self.executors = Executors(self)
         self.incidents = Incidents(self)
@@ -59,6 +61,7 @@ class Core:
         self.commands = Commands(self)
         self.claude_code = ClaudeCodeGuard(self)
         self.cc_learning = FailureLearning(self)
+        self.accounts = Accounts(self)
         self.refresh_auditor()
         self.worker_identity = {"role": "worker", "actor_id": "worker:local", "project_id": None}
         self.propagate_runtime_errors = False

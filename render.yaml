@@ -21,3 +21,16 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # only for an organization-level key: the workspace it should bill (wrkspc_...)
+      - key: ANTHROPIC_WORKSPACE_ID
+        sync: false
+      # accounts: the service's public address, and a GitHub OAuth app whose callback is PUBLIC_URL/v1/auth/github/callback
+      - key: PUBLIC_URL
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      # Claude calls each user may make per day on the shared key
+      - key: CLAUDE_DAILY_CALLS_PER_PROJECT
+        value: "300"

@@ -108,6 +108,14 @@ def create_app(core: Core | None = None) -> FastAPI:
     def need(p: dict, project_id: str | None, *roles: str) -> None:
         core.projects.authorize(p, project_id, set(roles) or {"app"})
 
+    def need_server_admin(p: dict) -> None:
+        """Server-wide settings (the shared Claude key, installing hooks on the server's disk): anyone locally,
+        only the operator when hosted."""
+        if cfg.PROJECT_AUTH_MODE == "token":
+            core.projects.authorize(p, None, {"operator"})
+        else:
+            need(p, None, "app", "operator")
+
     def idem(p: dict, project_id: str, endpoint: str, key: str | None, body: Any, fn):
         if not key:
             return fn()
@@ -154,6 +162,46 @@ def create_app(core: Core | None = None) -> FastAPI:
             raise NotFound("project")
         token = core.projects.issue_token(pid, "app", "user:local")
         return {"token": token, "project_id": pid, "projects": projects, "role": "app"}
+
+    # ------------------------------------------------------------ accounts (hosted)
+    @app.get("/v1/auth/config")
+    def auth_config():
+        return {"mode": cfg.PROJECT_AUTH_MODE, "github": core.accounts.github_enabled()}
+
+    @app.get("/v1/auth/github/start")
+    def github_start():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(core.accounts.github_start_url(), status_code=302)
+
+    @app.get("/v1/auth/github/callback")
+    def github_callback(code: str = "", state: str = "", error: str = ""):
+        from fastapi.responses import RedirectResponse
+        base = cfg.PUBLIC_URL.rstrip("/")
+        if error:
+            return RedirectResponse(f"{base}/#signin-error={error}", status_code=302)
+        try:
+            token = core.accounts.github_callback(code, state)
+        except InvalidRequest as e:
+            return RedirectResponse(f"{base}/#signin-error={e.code}", status_code=302)
+        # the token travels in the URL fragment, which browsers never send to servers
+        return RedirectResponse(f"{base}/#signin-token={token}", status_code=302)
+
+    @app.get("/v1/me")
+    def me(p=Depends(principal)):
+        u = core.accounts.user_for_project(p["project_id"]) if p.get("project_id") else None
+        return {"project_id": p["project_id"], "role": p["role"], "user": u, "mode": cfg.PROJECT_AUTH_MODE}
+
+    @app.post("/v1/connector/code")
+    def connector_code(request: Request, body: dict = Body(default={}), p=Depends(principal)):
+        """A connect code for one of the user's computers (server address + an access token for their project)."""
+        need(p, p["project_id"], "app")
+        server = cfg.PUBLIC_URL or str(request.base_url)
+        return core.accounts.connect_code(p["project_id"], server, str(body.get("name") or "computer"))
+
+    @app.get("/v1/connector/status")
+    def connector_status(p=Depends(principal)):
+        need(p, p["project_id"], "app", "operator")
+        return {"connectors": core.claude_code.remote.connectors(p["project_id"])}
 
     @app.post("/v1/session/login")
     def login(body: dict = Body(...)):
@@ -736,7 +784,7 @@ def create_app(core: Core | None = None) -> FastAPI:
 
     @app.post("/v1/integrations/claude/key")
     def claude_key(body: dict = Body(...), p=Depends(principal)):
-        need(p, None, "app", "operator")
+        need_server_admin(p)
         try:
             core.claude.save_key(str(body.get("api_key", "")))
         except ValueError as e:
@@ -746,14 +794,14 @@ def create_app(core: Core | None = None) -> FastAPI:
 
     @app.delete("/v1/integrations/claude/key")
     def claude_key_clear(p=Depends(principal)):
-        need(p, None, "app", "operator")
+        need_server_admin(p)
         core.claude.clear_key()
         core.refresh_auditor()
         return core.claude.status()
 
     @app.patch("/v1/integrations/claude")
     def claude_settings(body: dict = Body(...), p=Depends(principal)):
-        need(p, None, "app", "operator")
+        need_server_admin(p)
         try:
             core.claude.update_settings(body)
         except ValueError as e:
@@ -809,12 +857,12 @@ def create_app(core: Core | None = None) -> FastAPI:
 
     @app.post("/v1/integrations/claude-code/install")
     def claude_code_install(body: dict = Body(...), p=Depends(principal)):
-        need(p, body.get("project_id"), "app", "operator")
+        need_server_admin(p)
         return core.claude_code.install(body["project_id"], body["project_dir"], sys.executable, str(ROOT))
 
     @app.post("/v1/integrations/claude-code/uninstall")
     def claude_code_uninstall(body: dict = Body(...), p=Depends(principal)):
-        need(p, body.get("project_id"), "app", "operator")
+        need_server_admin(p)
         return core.claude_code.uninstall(body["project_dir"])
 
     # ------------------------------------------------------------ Claude Code history tree (website)
@@ -865,9 +913,77 @@ def create_app(core: Core | None = None) -> FastAPI:
 
     @app.post("/v1/claude-code/agents/{agent_id}/command")
     def cc_command(agent_id: str, body: dict = Body(...), p=Depends(principal)):
-        """Run a history command (restore, switch, merge, branch, save, diff, ...) on the project's current branch."""
+        """Run a history command (restore, switch, merge, branch, save, diff, ...) on the project's current branch.
+        Hosted folders: the command is queued for the user's connector, which sends a fresh snapshot and applies the result."""
         a = _cc_agent(agent_id, p, "app")
-        return core.commands.run(a["project_id"], agent_id, core.claude_code._branch_id(a), str(body.get("line", "")), p["actor_id"])
+        line = str(body.get("line", ""))
+        if core.claude_code.is_remote(a):
+            return dict(core.claude_code.remote.enqueue_command(a, line, p["actor_id"]), queued=True)
+        return core.commands.run(a["project_id"], agent_id, core.claude_code._branch_id(a), line, p["actor_id"])
+
+    @app.get("/v1/claude-code/commands/{command_id}")
+    def cc_command_status(command_id: str, p=Depends(principal)):
+        c = core.claude_code.remote.command(command_id)
+        if not c:
+            raise NotFound("command")
+        need(p, c["project_id"], "app", "operator")
+        return c
+
+    # ------------------------------------------------------------ connector (a user's computer, hosted mode)
+    @app.get("/v1/connector/whoami")
+    def connector_whoami(p=Depends(principal)):
+        u = core.db.one("SELECT login, name FROM users WHERE project_id=?", (p["project_id"],)) if p.get("project_id") else None
+        return {"project_id": p["project_id"], "user": (u or {}).get("login"), "mode": cfg.PROJECT_AUTH_MODE}
+
+    @app.post("/v1/connector/blobs")
+    def connector_blobs(body: dict = Body(...), p=Depends(principal)):
+        need(p, p["project_id"], "app")
+        return {"stored": core.claude_code.remote.put_blobs(p["project_id"], body.get("blobs") or {})}
+
+    @app.post("/v1/connector/folders")
+    def connector_folder(body: dict = Body(...), p=Depends(principal)):
+        need(p, p["project_id"], "app")
+        a = core.claude_code.agent_for_dir(p["project_id"], str(body["project_dir"]), actor=p["actor_id"], remote=True)
+        return {"agent_id": a["agent_id"], "name": a["name"]}
+
+    @app.get("/v1/connector/poll")
+    def connector_poll(timeout: float = 20, name: str = "computer", os: str = "", p=Depends(principal)):
+        import time as _t
+        need(p, p["project_id"], "app")
+        r = core.claude_code.remote
+        end = _t.time() + max(0.0, min(timeout, 25.0))
+        while True:
+            r.heartbeat(p["project_id"], name, os)
+            cmds = r.queued_commands(p["project_id"])
+            ops = r.deliver(p["project_id"])
+            if cmds or ops or _t.time() >= end:
+                return {"commands": cmds, "apply": ops}
+            _t.sleep(0.5)
+
+    @app.post("/v1/connector/run")
+    def connector_run(body: dict = Body(...), p=Depends(principal)):
+        """The connector runs a website command: with a fresh snapshot of the folder, then applies the result."""
+        need(p, p["project_id"], "app")
+        r = core.claude_code.remote
+        c = r.command(str(body.get("command_id")))
+        if not c or c["project_id"] != p["project_id"]:
+            raise NotFound("command")
+        if c["status"] == "done":
+            return {"result": c["result"], "apply": r.deliver(p["project_id"], c["agent_id"])}
+        agent = core.coordinator.agent(c["agent_id"])
+        if body.get("snapshot") is not None:
+            missing = r.missing(p["project_id"], body["snapshot"])
+            if missing:
+                return {"need_blobs": missing}
+            r.store(p["project_id"], agent, body["snapshot"])
+        core.db.execute("UPDATE connector_commands SET status='running', updated_at=? WHERE command_id=?", (utcnow(), c["command_id"]))
+        try:
+            res = core.commands.run(p["project_id"], c["agent_id"], core.claude_code._branch_id(agent), c["line"], c["actor"])
+        except Exception as e:  # report, never leave the website waiting
+            res = {"ok": False, "output": f"{type(e).__name__}: {str(e)[:300]}"}
+        r.finish_command(c["command_id"], {k: res.get(k) for k in ("ok", "output", "branch_id", "data")})
+        return {"result": res, "apply": r.deliver(p["project_id"], c["agent_id"])}
+
 
     @app.put("/v1/claude-code/settings")
     def cc_settings(body: dict = Body(...), p=Depends(principal)):

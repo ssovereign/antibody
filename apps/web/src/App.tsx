@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, bootstrap, currentProject, knownProjects, q, signIn } from "./api";
+import { api, authConfig, bootstrap, currentProject, githubSignInUrl, isHosted, knownProjects, q, signIn, signOut } from "./api";
 import { ErrorBox, Loading } from "./ui";
 import Overview from "./views/Overview";
 import Chat from "./views/Chat";
@@ -129,6 +129,9 @@ export default function App() {
           <div>
             Project <b>{currentProject()}</b>
           </div>
+          {isHosted() ? (
+            <button className="link-button small" onClick={() => { signOut(); window.location.reload(); }}>Sign out</button>
+          ) : null}
           {knownProjects().length > 1 ? (
             <select
               aria-label="Switch project"
@@ -177,7 +180,10 @@ export { q };
 function SignIn({ error }: { error: any }) {
   const [tok, setTok] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  const [e, setE] = React.useState<any>(error);
+  const [gh, setGh] = React.useState(false);
+  const failed = (window.location.hash.match(/signin-error=([^&]+)/) || [])[1];
+  const [e, setE] = React.useState<any>(error || (failed ? { message: `GitHub sign-in did not complete (${failed}). Please try again.` } : null));
+  React.useEffect(() => { authConfig().then((c) => setGh(c.github)); }, []);
   const go = () => {
     setBusy(true);
     signIn(tok.trim()).then(() => window.location.reload()).catch((x) => { setE(x); setBusy(false); });
@@ -186,8 +192,16 @@ function SignIn({ error }: { error: any }) {
     <div style={{ maxWidth: 460, margin: "12vh auto", padding: "0 16px" }}>
       <div className="card">
         <h2>Sign in to ANTIBODY</h2>
-        <p className="small">Paste the access token you were given. Whoever runs this server creates one with{" "}
-          <code>python -m server.cli invite --project &lt;project&gt; --name &lt;you&gt;</code>.</p>
+        {gh ? (
+          <>
+            <p className="small">Your own workspace: practice agents, Chat with Claude, and your Claude Code projects once you connect your computer.</p>
+            <a className="gh-button" href={githubSignInUrl()}>Sign in with GitHub</a>
+            <p className="small muted" style={{ marginTop: 16 }}>Or use an access token you were given:</p>
+          </>
+        ) : (
+          <p className="small">Paste the access token you were given. Whoever runs this server creates one with{" "}
+            <code>python -m server.cli invite --project &lt;project&gt; --name &lt;you&gt;</code>.</p>
+        )}
         <input type="password" autoComplete="off" value={tok} onChange={(x) => setTok(x.target.value)} placeholder="access token"
                aria-label="Access token" style={{ width: "100%", margin: "8px 0" }} onKeyDown={(x) => { if (x.key === "Enter" && tok.trim()) go(); }} />
         <button className="primary" onClick={go} disabled={!tok.trim() || busy}>{busy ? "Signing in…" : "Sign in"}</button>

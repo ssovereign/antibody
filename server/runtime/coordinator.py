@@ -244,6 +244,7 @@ class Coordinator:
             return self.run(run_id)
         try:
             run = self.run(run_id)
+            self.core.claude.bill_to(run["project_id"])
             if run["status"] == "running":
                 try:
                     self.core.agent.invoke(run, self._initial_state(run))

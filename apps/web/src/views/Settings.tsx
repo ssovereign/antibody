@@ -2,7 +2,8 @@ import React from "react";
 import { api, currentProject, newKey, q } from "../api";
 import { Page } from "../App";
 import { Badge, Btn, ErrorBox, Json, KV, Loading, useAction, useApi } from "../ui";
-import { ConnectClaude, ConnectClaudeCode, GuardClaudeCode } from "./Connections";
+import { ConnectClaude, ConnectClaudeCode, ConnectComputer, GuardClaudeCode } from "./Connections";
+import { isHosted } from "../api";
 
 export default function Settings() {
   const pid = currentProject();
@@ -19,8 +20,8 @@ export default function Settings() {
       <ErrorBox error={s.error || caps.error} />
       <div className="split">
         <div>
-          <ConnectClaude />
-          <GuardClaudeCode />
+          {isHosted() ? null : <ConnectClaude />}
+          {isHosted() ? <ConnectComputer /> : <GuardClaudeCode />}
           <ConnectClaudeCode />
           <div className="card">
             <h2>Adapter capability profiles</h2>

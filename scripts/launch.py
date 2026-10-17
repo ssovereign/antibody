@@ -73,8 +73,63 @@ def instructions() -> None:
     say("=" * 70)
 
 
+def hosted() -> int | None:
+    """Connect this computer to a hosted ANTIBODY (connect code from the website), or None to run locally."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import antibody_connector as ac
+    cfg = ac.load_config()
+    code = os.environ.get("ANTIBODY_CONNECT_CODE", "").strip()
+    if not code and not cfg.get("token") and sys.stdin and sys.stdin.isatty():
+        say("")
+        say("To use the hosted ANTIBODY website: sign in there, open Settings -> Connect your computer,")
+        say("create a connect code and paste it here. Or just press Enter to run ANTIBODY on this computer only.")
+        try:
+            code = input("Connect code: ").strip()
+        except EOFError:
+            code = ""
+    if not code and not cfg.get("token"):
+        return None
+    try:
+        if code:
+            me = ac.connect(code)
+            say(f"Connected to {ac.load_config()['server']} as {me.get('user') or me['project_id']}.")
+        else:
+            say(f"Using your connection to {cfg['server']} (delete {ac.CONFIG} to connect differently).")
+        res = ac.demo(NAME)
+        say(f"Practice folder (guarded): {res['folder']}")
+    except Exception as e:
+        say(f"Could not connect: {e}")
+        say("Check the code (create a new one on the website) and that this computer can reach the internet.")
+        return 1
+    cfg = ac.load_config()
+    say("")
+    say("=" * 70)
+    say(f" Website:          {cfg['server']}   (your workspace)")
+    say(f" Practice folder:  {res['folder']}")
+    say("")
+    say(" Open the practice folder in Claude Code (desktop app Code tab, or run `claude`")
+    say(" in a terminal there), type  ab: status  and follow its README.md. Everything")
+    say(" shows up live on the website, and going back or merging there changes files here.")
+    say("")
+    say(" Keep this window open so the website can reach this computer. Ctrl+C to stop.")
+    say("=" * 70)
+    if not os.environ.get("ANTIBODY_NO_BROWSER"):
+        try:
+            webbrowser.open(cfg["server"] + "/#/claude-code")
+        except Exception:
+            pass
+    try:
+        ac.run_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def main() -> int:
     say("ANTIBODY launcher")
+    h = hosted()
+    if h is not None:
+        return h
     if healthy():
         say(f"ANTIBODY is already running at {URL}.")
         open_browser()

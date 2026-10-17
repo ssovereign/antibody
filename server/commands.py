@@ -110,6 +110,7 @@ class Commands:
         agent = self.core.coordinator.agent(agent_id)
         if agent["project_id"] != project_id:
             raise NotFound(f"agent {agent_id}")
+        self.core.claude.bill_to(project_id)
         branch = self.v.branch(branch_id or agent["accepted_branch_id"])
         if branch["agent_id"] != agent_id:
             raise InvalidRequest("BRANCH_MISMATCH", "that branch belongs to another agent")

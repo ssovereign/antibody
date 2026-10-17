@@ -121,6 +121,49 @@ export function GuardClaudeCode() {
   );
 }
 
+export function ConnectComputer() {
+  const st = useApi(() => api(`/v1/connector/status`), []);
+  const [code, setCode] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+  const { busy, run } = useAction();
+  const make = () => run("code", () => api(`/v1/connector/code`, { method: "POST", body: { name: "my computer" } }).then(setCode));
+  const conns = st.data?.connectors || [];
+  const online = (c: any) => Date.now() - new Date(c.last_seen).getTime() < 60_000;
+  return (
+    <div className="card" id="connect-computer">
+      <h2>Connect your computer {conns.some(online) ? <Badge kind="ok">connected</Badge> : <Badge kind="warn">not connected</Badge>}</h2>
+      <p className="small">Claude Code runs on your computer, so a small connector links it to this workspace. With it, everything Claude
+        Code does there (checked actions, checkpoints, lessons) shows up here, and going back, switching branches and merging from this
+        website change the files on your computer.</p>
+      <ol className="small">
+        <li>Download ANTIBODY: <a href="https://github.com/ssovereign/antibody/archive/refs/heads/main.zip">ZIP</a> (unzip it), or clone{" "}
+          <code>github.com/ssovereign/antibody</code>.</li>
+        <li>Double-click <b>start-antibody</b> (<code>.cmd</code> on Windows, <code>.command</code> on Mac, <code>.sh</code> on Linux).</li>
+        <li>When it asks, paste this connect code. It creates a guarded practice folder and stays connected while the window is open.</li>
+      </ol>
+      <div className="row">
+        <Btn kind="primary" onClick={make} busy={busy === "code"}>{code ? "New connect code" : "Create connect code"}</Btn>
+      </div>
+      {code ? (
+        <div style={{ marginTop: 8 }}>
+          <div className="code-box small">{code.code}</div>
+          <div className="row" style={{ marginTop: 6 }}>
+            <button onClick={() => navigator.clipboard?.writeText(code.code).then(() => setCopied(true))}>{copied ? "Copied" : "Copy code"}</button>
+            <span className="small muted">Treat it like a password: it lets that computer act in your workspace.</span>
+          </div>
+        </div>
+      ) : null}
+      {conns.length ? (
+        <table style={{ marginTop: 10 }}><tbody>{conns.map((c: any) => (
+          <tr key={c.name}><td><b>{c.name}</b> <span className="small muted">{c.os}</span></td>
+            <td>{online(c) ? <Badge kind="ok">online</Badge> : <Badge kind="neutral">offline</Badge>}</td>
+            <td className="small muted">last seen {when(c.last_seen)}</td></tr>
+        ))}</tbody></table>
+      ) : null}
+    </div>
+  );
+}
+
 export function ConnectClaudeCode() {
   const pid = currentProject();
   const s = useApi(() => api(`/v1/integrations/mcp${q({ project_id: pid })}`), [pid]);

@@ -44,7 +44,21 @@ function ProjectHistory({ agentId }: { agentId: string }) {
   if (!t.data) return <Loading what="history" />;
   const d = t.data;
   const cmd = (line: string, key: string, ok?: string) => run(key, async () => {
-    const r = await api(`/v1/claude-code/agents/${agentId}/command`, { method: "POST", body: { line } });
+    let r = await api(`/v1/claude-code/agents/${agentId}/command`, { method: "POST", body: { line } });
+    if (r.queued) {
+      // hosted: the command runs through the connector on the user's computer (fresh snapshot in, file changes out)
+      setResult({ line, waiting: true, output: "Waiting for your computer to run it…" });
+      const started = Date.now();
+      for (;;) {
+        await new Promise((res) => setTimeout(res, 1500));
+        const c = await api(`/v1/claude-code/commands/${r.command_id}`);
+        if (c.status === "done") { r = c.result || { ok: false, output: "No result." }; break; }
+        if (c.status === "queued" && Date.now() - started > 15000) {
+          setResult({ line, waiting: true, output: "Still waiting: is your computer connected? Start start-antibody (Settings → Connect your computer)." });
+        }
+        if (Date.now() - started > 30 * 60 * 1000) { r = { ok: false, output: "Timed out waiting for your computer." }; break; }
+      }
+    }
     setResult({ line, ...r });
     t.reload();
     return r;
@@ -192,7 +206,7 @@ function CommandResult({ r }: { r: any }) {
   const resume = sid ? `claude --resume ${sid}` : null;
   return (
     <div className="card">
-      <h3>{r.ok ? "Done" : "Not done"}: <span className="mono">{r.line}</span></h3>
+      <h3>{r.waiting ? "Running" : r.ok ? "Done" : "Not done"}: <span className="mono">{r.line}</span></h3>
       {resume ? (
         <div style={{ marginBottom: 8 }}>
           <p className="small">To continue as that agent: in Claude Code type <code>/resume</code> and pick the "ANTIBODY: …" session,

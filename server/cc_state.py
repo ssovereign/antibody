@@ -125,6 +125,16 @@ def summarize(ch: list[dict], limit: int = 40) -> list[str]:
 
 def write_session(ch: list[dict], cwd: str, title: str, extra: list[dict] | None = None) -> tuple[str, Path]:
     """Write a conversation as a brand-new Claude Code session (never touches an existing one)."""
+    sid, data = build_session(ch, cwd, title, extra)
+    folder = projects_root() / encode_dir(cwd)
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{sid}.jsonl"
+    path.write_bytes(data)
+    return sid, path
+
+
+def build_session(ch: list[dict], cwd: str, title: str, extra: list[dict] | None = None) -> tuple[str, bytes]:
+    """The bytes of a new Claude Code session file for this conversation (new session id, re-linked entries)."""
     sid = str(uuid.uuid4())
     remap: dict[str, str] = {}
     out = []
@@ -146,11 +156,7 @@ def write_session(ch: list[dict], cwd: str, title: str, extra: list[dict] | None
     out.append({"type": "custom-title", "customTitle": title[:80], "sessionId": sid})
     if prev:
         out.append({"type": "last-prompt", "lastPrompt": "", "leafUuid": prev, "sessionId": sid})
-    folder = projects_root() / encode_dir(cwd)
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{sid}.jsonl"
-    path.write_text("".join(json.dumps(d, ensure_ascii=False) + "\n" for d in out), encoding="utf-8")
-    return sid, path
+    return sid, "".join(json.dumps(d, ensure_ascii=False) + "\n" for d in out).encode("utf-8")
 
 
 def synthetic_turn(ch: list[dict], user_text: str, assistant_text: str | None) -> list[dict]:
