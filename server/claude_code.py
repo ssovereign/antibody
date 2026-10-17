@@ -151,8 +151,11 @@ class ClaudeCodeGuard:
             self.db.execute("UPDATE host_sessions SET last_seen=?, transcript_path=COALESCE(?, transcript_path) WHERE session_id=?",
                             (utcnow(), ev.get("transcript_path"), sid))
             run = self.core.coordinator.run(row["run_id"])
-            if run["status"] == "completed" and run["status_reason"] == "HOST_SESSION_ENDED":
-                # `claude --resume` reopens an ended session; an operator pause is not undone here
+            if (run["status"] == "completed" and run["status_reason"] == "HOST_SESSION_ENDED") or \
+                    (run["status"] == "paused" and run["status_reason"] in ("SERVICE_SHUTDOWN", "SERVICE_RESTART")):
+                # `claude --resume` reopens an ended session, and a server restart (every deploy) must not leave Claude Code
+                # sessions blocked: the session runs on the user's computer and simply carries on. An operator pause
+                # or a safety pause is not undone here.
                 self.core.coordinator.set_status(run["run_id"], "running", "HOST_SESSION_RESUMED")
                 run = self.core.coordinator.run(row["run_id"])
             return self.core.coordinator.agent(row["agent_id"]), run

@@ -241,3 +241,18 @@ def test_desktop_app_ui_tools_are_not_held_for_approval(core, proj):
     assert decision(pre(core, proj, "mcp__ccd_turn__update_plan", {"items": []})) == "allow"
     assert decision(pre(core, proj, "mcp__ccd_turn__wrap_up", {"recap": "x"})) == "allow"
     assert decision(pre(core, proj, "mcp__slack__post_message", {"text": "hi"})) == "ask"
+
+
+def test_server_restart_does_not_leave_claude_code_sessions_blocked(core, proj):
+    core.claude_code.handle(PID, ev(proj, "SessionStart", sid="restart-1"))
+    run_id = core.db.scalar("SELECT run_id FROM host_sessions WHERE session_id='restart-1'")
+    core.coordinator.startup_recovery()                       # what happens on every deploy
+    assert core.coordinator.run(run_id)["status"] == "paused"
+    r = core.claude_code.handle(PID, ev(proj, "PreToolUse", sid="restart-1", tool_name="Read",
+                                        tool_input={"file_path": str(proj / "README.md")}, tool_use_id="r1"))
+    assert decision(r) == "allow" and core.coordinator.run(run_id)["status"] == "running"
+    # an operator's pause is respected
+    core.coordinator.set_status(run_id, "paused", "OPERATOR_PAUSE")
+    r = core.claude_code.handle(PID, ev(proj, "PreToolUse", sid="restart-1", tool_name="Read",
+                                        tool_input={"file_path": str(proj / "README.md")}, tool_use_id="r2"))
+    assert decision(r) == "deny"
